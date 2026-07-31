@@ -20,7 +20,8 @@ conda activate ml_homework
 pip install pygame tqdm
 pip install -r requirements.txt
 ```
-*Note: The requirements.txt contains all additional packages needed for our agent to function.   
+
+*Note: All of the packages stated above are included in the DOCKERFILE and will be installed. The requirements.txt contains all additional packages needed for OUR agent to function.   
 NOTE FOR THE TEAM: If you want to use libraries that aren't installed in the Dockerfile by default, you must specify them in the requirements.txt file.*
 
 # Shortcuts for the Team:
