@@ -58,5 +58,6 @@ python main.py play --my-agent model_a --train 1 --no-gui
 
 ## Deadlines
 
+- Agent code test deadline:  Thur 17.09.26, 21:00
 - Agent code: Mon 21.09.2026, 21:00
 - Report: Mon 28.09.2026, 21:00
