@@ -9,7 +9,6 @@ from collections import deque # double-ended queue (faster than list for BFS)
 
 ACTIONS = ['UP', 'RIGHT', 'DOWN', 'LEFT', 'WAIT', 'BOMB']  # These are the only actions our model can take
 
-
 def setup(self):
     """
     Setup your code. This is called once when loading each agent.
@@ -27,6 +26,7 @@ def setup(self):
     if self.train or not os.path.isfile("my-saved-model.pt"):
         self.logger.info("Setting up model from scratch.")
         weights = np.random.rand(len(ACTIONS))
+        weights[-1] = 0.0  # We don't want to place bombs for Task 1
         self.model = weights / weights.sum()
     else:
         self.logger.info("Loading model from saved state.")
@@ -47,8 +47,9 @@ def act(self, game_state: dict) -> str:
     random_prob = .1
     if self.train and random.random() < random_prob: 
         self.logger.debug("Choosing action purely at random.")
-        # 80%: walk in any direction. 10% wait. 10% bomb.
-        return np.random.choice(ACTIONS, p=[.2, .2, .2, .2, .1, .1])
+        # 80%: walk in any direction. 10% wait. 10% bomb. (NOT for Task 1)
+        # return np.random.choice(ACTIONS, p=[.2, .2, .2, .2, .1, .1]) # use this after Task 1 is done and bomb is added
+        return np.random.choice(ACTIONS, p=[.2, .2, .2, .2, .2, .0]) # changed coz bomb is missing for task 1
 
     # If Testing or Exploitation: Use model to predict action based on game state
     state = state_to_features(game_state) 
