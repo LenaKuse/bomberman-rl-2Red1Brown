@@ -92,6 +92,8 @@ def get_bfs_direction(game_state):
                 queue.append(neighbor) # Add to queue to explore later
     if target is None:
         return 'WAIT'
+    if target == start: # If the agent is already on a coin, just wait
+        return 'WAIT'
     step = target
     while parent[step] != start: # Reconstruct the path from the target back to the start
         step = parent[step]
