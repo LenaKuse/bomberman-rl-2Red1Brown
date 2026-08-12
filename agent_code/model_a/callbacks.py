@@ -68,7 +68,10 @@ def act(self, game_state: dict) -> str:
     masked_q_values = q_values.copy() # Create a copy of Q-values to mask invalid actions
     masked_q_values[-1] = -np.inf # Exclude 'BOMB' action for Task 1
 
-    action = ACTIONS[np.argmax(masked_q_values)] # Choose action with highest Q-value
+    # Choose the action with the highest Q-value, breaking ties randomly.
+    best_value = np.max(masked_q_values)
+    best_indices = np.flatnonzero(masked_q_values == best_value)
+    action = ACTIONS[np.random.choice(best_indices)]
     self.logger.debug(f"State: {state} (Q-values: {q_values}) -> Chosen action: {action}")
     return action
 
