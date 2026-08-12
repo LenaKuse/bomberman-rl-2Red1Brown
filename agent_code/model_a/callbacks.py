@@ -9,6 +9,18 @@ from collections import deque # double-ended queue (faster than list for BFS)
 
 ACTIONS = ['UP', 'RIGHT', 'DOWN', 'LEFT', 'WAIT', 'BOMB']  # These are the only actions our model can take
 
+def get_q_values(self, state):
+    """
+    Get the Q-values for a given state from the model.
+
+    :param self: This agent's persistent object. 
+    :param state: The current state of the game.
+    :return: A numpy array of Q-values for each action.
+    """
+    if state not in self.model:
+        self.model[state] = np.zeros(len(ACTIONS)) # Initialize Q-values for yet unseen states
+    return self.model[state]
+    
 def setup(self):
     """
     Setup your code. This is called once when loading each agent.
@@ -25,9 +37,7 @@ def setup(self):
     """
     if self.train or not os.path.isfile("my-saved-model.pt"): # If training or no model exists yet
         self.logger.info("Setting up model from scratch.")
-        weights = np.random.rand(len(ACTIONS))
-        weights[-1] = 0.0  # We don't want to place bombs for Task 1
-        self.model = weights / weights.sum()
+        self.model = {} # Initialize an empty dictionary to store Q-values for each state
     else: # If testing and model exists
         self.logger.info("Loading model from saved state.")
         with open("my-saved-model.pt", "rb") as file:
@@ -53,10 +63,14 @@ def act(self, game_state: dict) -> str:
 
     # If Testing or Exploitation: Use model to predict action based on game state
     state = state_to_features(game_state) 
-    self.logger.debug(f"Current state: {state}")
+    q_values = get_q_values(self, state) # Get Q-values for the current state
 
-    self.logger.debug("Querying model for action.")
-    return np.random.choice(ACTIONS, p=self.model)
+    masked_q_values = q_values.copy() # Create a copy of Q-values to mask invalid actions
+    masked_q_values[-1] = -np.inf # Exclude 'BOMB' action for Task 1
+
+    action = ACTIONS[np.argmax(masked_q_values)] # Choose action with highest Q-value
+    self.logger.debug(f"State: {state} (Q-values: {q_values}) -> Chosen action: {action}")
+    return action
 
 def get_bfs_direction(game_state): 
     """
