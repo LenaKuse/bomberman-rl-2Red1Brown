@@ -28,7 +28,7 @@ def setup_training(self):
     """
     # Example: Setup an array that will note transition tuples
     # (s, a, r, s')
-    self.transitions = deque(maxlen=TRANSITION_HISTORY_SIZE)
+    self.transitions = deque(maxlen=TRANSITION_HISTORY_SIZE) # Called once after setup(). Creates a deque to store amount of entries. At limit: oldest will be deleted, to add new one.
 
 
 def game_events_occurred(self, old_game_state: dict, self_action: str, new_game_state: dict, events: List[str]):
