@@ -53,9 +53,9 @@ def act(self, game_state: dict) -> str:
     :param game_state: The dictionary that describes everything on the board.
     :return: The action to take as a string.
     """
-    # If Training: Exploration vs exploitation
+    # If Training and no evaluation phase: Exploration vs exploitation
     random_prob = .1
-    if self.train and random.random() < random_prob: 
+    if self.train and not getattr(self, 'eval_mode', False) and random.random() < random_prob: 
         self.logger.debug("Choosing action purely at random.")
         # 80%: walk in any direction. 10% wait. 10% bomb. (NOT for Task 1)
         # return np.random.choice(ACTIONS, p=[.2, .2, .2, .2, .1, .1]) # use this after Task 1 is done and bomb is added

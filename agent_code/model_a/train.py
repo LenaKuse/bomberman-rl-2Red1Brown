@@ -2,6 +2,7 @@ from collections import namedtuple, deque
 
 import pickle
 import numpy as np
+import os
 from typing import List
 
 import events as e
@@ -33,6 +34,8 @@ def update_q_values(self, old_state, action, reward, new_state):
     old_q_values[action_index] += ALPHA * td_error # Update Q-value for the taken action
     self.logger.debug(f"Updated Q-value for state {old_state}, action {action}: {old_q_values[action_index]} (TD Error: {td_error})")
 
+    return td_error  # Return the TD error for logging and analysis
+
 # Events
 #PLACEHOLDER_EVENT = "PLACEHOLDER"
 
@@ -49,6 +52,25 @@ def setup_training(self):
     # (s, a, r, s')
     #self.transitions = deque(maxlen=TRANSITION_HISTORY_SIZE) # Called once after setup(). Creates a deque to store amount of entries. At limit: oldest will be deleted, to add new one.
 
+    self.run_name = input("Enter a name for this training run (e.g. 'Lena_A_baseline'): ")
+    self.track_progress = input("Do you want to track progress for a plot? (y/n): ").strip().lower() == "y"
+
+    if self.track_progress:
+        self.eval_interval = int(input("Evaluate every ... training rounds? (e.g. 50): "))
+        self.eval_rounds = int(input("How many rounds per evaluation phase? (e.g. 10): "))
+    else:
+        self.eval_interval = None
+        self.eval_rounds = None
+
+    self.round_reward = 0 # Sum of rewards for the current round
+    self.round_td_error = 0 # Sum of absolute TD errors for the current round
+    self.round_steps = 0 # Number of steps taken in the current round
+    self.train_round_counter = 0 # counts ONLY training rounds, not eval rounds
+    self.eval_mode = self.track_progress # Starts with eval phase to record untrained baseline
+    self.rounds_since_eval = 0 
+    self.eval_counter = 0
+
+    os.makedirs("experiments", exist_ok=True)
 
 def game_events_occurred(self, old_game_state: dict, self_action: str, new_game_state: dict, events: List[str]):
     """
@@ -78,8 +100,13 @@ def game_events_occurred(self, old_game_state: dict, self_action: str, new_game_
     old_state = state_to_features(old_game_state)
     new_state = state_to_features(new_game_state)
     reward = reward_from_events(self, events)
-    update_q_values(self, old_state, self_action, reward, new_state)
 
+    self.round_reward += reward
+    self.round_steps += 1
+
+    if not self.eval_mode:  # Only update Q-values during training
+        td_error = update_q_values(self, old_state, self_action, reward, new_state) # Update Q-values
+        self.round_td_error += abs(td_error) # Add absolute TD error to the round's total for logging purposes
 
 def end_of_round(self, last_game_state: dict, last_action: str, events: List[str]):
     """
@@ -98,7 +125,37 @@ def end_of_round(self, last_game_state: dict, last_action: str, events: List[str
     #self.transitions.append(Transition(state_to_features(last_game_state), last_action, None, reward_from_events(self, events)))
     last_state = state_to_features(last_game_state)
     reward = reward_from_events(self, events)
-    update_q_values(self, last_state, last_action, reward, None)
+    self.round_reward += reward # For logging purposes
+    self.round_steps += 1 # For logging purposes
+
+    if not self.eval_mode:  # Never during evaluation phase, only during training
+        td_error = update_q_values(self, last_state, last_action, reward, None) # Update Q-values
+        self.round_td_error += abs(td_error) # Add absolute TD error to the round's total for logging purposes
+        avg_td_error = self.round_td_error / self.round_steps if self.round_steps > 0 else 0 # Average TD error for the round, so rounds with different lengths can be compared
+
+        self.train_round_counter += 1 
+
+        if self.track_progress:
+            with open(f"experiments/{self.run_name}_training_progress.csv", "a") as f:
+                f.write(f"{self.train_round_counter},{self.round_reward},{avg_td_error}\n")
+
+            self.rounds_since_eval += 1
+            if self.rounds_since_eval >= self.eval_interval:
+                self.eval_mode = True
+                self.rounds_since_eval = 0
+    else: # During evaluation phase, we don't update Q-values, but we log the evaluation rewards
+        if self.track_progress:
+            with open(f"experiments/{self.run_name}_eval_progress.csv", "a") as f:
+                f.write(f"{self.train_round_counter},{self.round_reward}\n")
+
+        self.eval_counter += 1
+        if self.eval_counter >= self.eval_rounds:
+            self.eval_mode = False
+            self.eval_counter = 0
+
+    self.round_reward = 0 # Reset round reward for the next round
+    self.round_td_error = 0 # Reset round TD error for the next round
+    self.round_steps = 0 # Reset round steps for the next round
 
     # Store the model
     with open("my-saved-model.pt", "wb") as file:
