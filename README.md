@@ -57,9 +57,9 @@ During evaluation, the agent acts greedily (no exploration) and the Q-table is *
 `--n-rounds` sets the *total* number of rounds (training + evaluation combined) — it does **not**
 equal the number of training rounds you'll actually get. Use this formula to compute it:
 
->'''
+
 >n_rounds = eval_rounds + k*(eval_interval + eval_rounds)
->'''
+
 where `k` = how many full training/eval cycles you want. Choosing `n_rounds` this way makes the
 run end right after a completed evaluation phase (so you get a clean final data point).
 
