@@ -39,7 +39,7 @@ def update_q_values(self, old_state, action, reward, new_state):
 # Events
 MOVED_CLOSER_TO_COIN = "MOVED_CLOSER_TO_COIN"
 MOVED_FURTHER_FROM_COIN = "MOVED_FURTHER_FROM_COIN"
-
+NO_PROGRESS_TOWARD_COIN = "NO_PROGRESS_TOWARD_COIN"
 
 def setup_training(self):
     """
@@ -101,6 +101,8 @@ def game_events_occurred(self, old_game_state: dict, self_action: str, new_game_
                 events.append(MOVED_CLOSER_TO_COIN)
             elif new_distance > old_distance:
                 events.append(MOVED_FURTHER_FROM_COIN)
+            else:
+                events.append(NO_PROGRESS_TOWARD_COIN)
 
     # state_to_features is defined in callbacks.py
     #self.transitions.append(Transition(state_to_features(old_game_state), self_action, state_to_features(new_game_state), reward_from_events(self, events)))
@@ -180,8 +182,9 @@ def reward_from_events(self, events: List[str]) -> int:
         e.COIN_COLLECTED: 1,
         e.KILLED_OPPONENT: 5,
         e.INVALID_ACTION: -1, 
-        MOVED_CLOSER_TO_COIN: 0.05,
-        MOVED_FURTHER_FROM_COIN: -0.05,
+        MOVED_CLOSER_TO_COIN: 0.5,
+        MOVED_FURTHER_FROM_COIN: -0.5,
+        NO_PROGRESS_TOWARD_COIN: -0.2,
     }
     reward_sum = 0
     for event in events:
