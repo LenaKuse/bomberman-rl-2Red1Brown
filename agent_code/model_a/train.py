@@ -6,7 +6,7 @@ import os
 from typing import List
 
 import events as e
-from .callbacks import state_to_features, get_q_values, ACTIONS
+from .callbacks import state_to_features, get_q_values, ACTIONS, get_bfs_distance
 
 ALPHA = 0.1 # learning rate: how much we update our Q-values after each step
 GAMMA = 0.9 # discount factor: how much we value future rewards over immediate rewards
@@ -37,7 +37,8 @@ def update_q_values(self, old_state, action, reward, new_state):
     return td_error  # Return the TD error for logging and analysis
 
 # Events
-#PLACEHOLDER_EVENT = "PLACEHOLDER"
+MOVED_CLOSER_TO_COIN = "MOVED_CLOSER_TO_COIN"
+MOVED_FURTHER_FROM_COIN = "MOVED_FURTHER_FROM_COIN"
 
 
 def setup_training(self):
@@ -91,9 +92,15 @@ def game_events_occurred(self, old_game_state: dict, self_action: str, new_game_
     """
     self.logger.debug(f'Encountered game event(s) {", ".join(map(repr, events))} in step {new_game_state["step"]}')
 
-    # Idea: Add your own events to hand out rewards
-    #if ...:
-    #    events.append(PLACEHOLDER_EVENT)
+# Additional reward for moving closer to or further away from the nearest coin
+    if e.COIN_COLLECTED not in events: # only valid if no coin was collected in this step, to avoid wrong punishment after collecting a coin 
+        old_distance = get_bfs_distance(old_game_state)
+        new_distance = get_bfs_distance(new_game_state)
+        if old_distance is not None and new_distance is not None:
+            if new_distance < old_distance:
+                events.append(MOVED_CLOSER_TO_COIN)
+            elif new_distance > old_distance:
+                events.append(MOVED_FURTHER_FROM_COIN)
 
     # state_to_features is defined in callbacks.py
     #self.transitions.append(Transition(state_to_features(old_game_state), self_action, state_to_features(new_game_state), reward_from_events(self, events)))
@@ -173,7 +180,8 @@ def reward_from_events(self, events: List[str]) -> int:
         e.COIN_COLLECTED: 1,
         e.KILLED_OPPONENT: 5,
         e.INVALID_ACTION: -1, 
-        #PLACEHOLDER_EVENT: -.1  # idea: the custom event is bad
+        MOVED_CLOSER_TO_COIN: 0.05,
+        MOVED_FURTHER_FROM_COIN: -0.05,
     }
     reward_sum = 0
     for event in events:

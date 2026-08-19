@@ -121,6 +121,39 @@ def get_bfs_direction(game_state):
     if dy == -1: return 'UP'
 
 
+def get_bfs_distance(game_state):
+    """
+    Same BFS search as above, but returns the number of steps to the nearest coin.
+    Returns None if there are no coins or none are reachable.
+    """
+    if game_state is None:
+        return None
+    field = game_state['field']
+    start = game_state['self'][3] # Agent's position
+    coins = game_state['coins']
+    if not coins:
+        return None
+    coins_set = set(coins)
+    if start in coins_set:
+        return 0
+    queue = deque([start])
+    visited = {start}
+    distance = {start: 0}
+    while queue:
+        current = queue.popleft()
+        x, y = current
+        for dx, dy in [(0, -1), (0, 1), (-1, 0), (1, 0)]:
+            neighbor = (x + dx, y + dy)
+            if neighbor not in visited and field[neighbor[0]][neighbor[1]] == 0:
+                visited.add(neighbor)
+                distance[neighbor] = distance[current] + 1
+                if neighbor in coins_set:
+                    return distance[neighbor]
+                queue.append(neighbor)
+    return None  # No reachable coins found
+    
+
+
 def state_to_features(game_state: dict) -> np.array:
     """
     *This is not a required function, but an idea to structure your code.*
