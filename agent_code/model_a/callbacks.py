@@ -84,7 +84,7 @@ def get_bfs_target(game_state):
     :param game_state: A dictionary describing the current game board.
     :return: A tuple (target_type, direction, distance).
              target_type is 'COIN', 'CRATE', or None (nothing found).
-             direction is one of ACTIONS (excluding BOMB), or 'WAIT'.
+             direction is one of ACTIONS (UP, RIGHT, DOWN, LEFT), 'AT_TARGET' or 'WAIT' (no target found).
     """
     if game_state is None:
         return None, 'WAIT', None
@@ -94,7 +94,7 @@ def get_bfs_target(game_state):
     coins_set = set(game_state['coins'])
 
     if start in coins_set:
-        return 'COIN', 'WAIT', 0
+        return 'COIN', 'AT_TARGET', 0
 
     queue = deque([start])
     visited = {start}
@@ -149,7 +149,7 @@ def get_bfs_target(game_state):
         return None, 'WAIT', None
 
     if target == start:
-        return target_type, 'WAIT', 0
+        return target_type, 'AT_TARGET', 0
 
     step = target
     while parent[step] != start:
