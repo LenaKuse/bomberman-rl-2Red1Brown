@@ -6,7 +6,7 @@ import os
 from typing import List
 
 import events as e
-from .callbacks import state_to_features, get_q_values, ACTIONS, get_bfs_distance
+from .callbacks import state_to_features, get_q_values, ACTIONS, get_bfs_target
 
 ALPHA = 0.1 # learning rate: how much we update our Q-values after each step
 GAMMA = 0.9 # discount factor: how much we value future rewards over immediate rewards
@@ -94,8 +94,8 @@ def game_events_occurred(self, old_game_state: dict, self_action: str, new_game_
 
 # Additional reward for moving closer to or further away from the nearest coin
     if e.COIN_COLLECTED not in events: # only valid if no coin was collected in this step, to avoid wrong punishment after collecting a coin 
-        old_distance = get_bfs_distance(old_game_state)
-        new_distance = get_bfs_distance(new_game_state)
+        _, _, old_distance = get_bfs_target(old_game_state)
+        _, _, new_distance = get_bfs_target(new_game_state)
         if old_distance is not None and new_distance is not None:
             if new_distance < old_distance:
                 events.append(MOVED_CLOSER_TO_COIN)

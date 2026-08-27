@@ -75,83 +75,92 @@ def act(self, game_state: dict) -> str:
     self.logger.debug(f"State: {state} (Q-values: {q_values}) -> Chosen action: {action}")
     return action
 
-def get_bfs_direction(game_state): 
+def get_bfs_target(game_state):
     """
-    Function to solve Task 1. 
-    Collect all coins as quickly as possible in the field and 
-    navigate efficiently to the nearest coin using BFS.
-    Finds the shortest walkable path to the nearest coin using
-    breadth-first search (BFS) and returns the direction of the
-    very first step of that path. Walls and crates are treated as
-    non-walkable, so the search automatically routes around them.
-                      """         
-    field = game_state['field']
-    start = game_state['self'][3] # Agent's position
-    coins = game_state['coins']
-    if not coins: # No coins left to collect
-        return 'WAIT'
-    coins_set = set(coins) # Convert list of coins to a set, coz faster.
-    queue = deque([start]) # BFS queue starts with agent's position
-    visited = {start} # To keep track of visited positions and to avoid infinite loops.
-    parent = {} # Remembers the parent of each position to reconstruct the path later.
-    target = None 
-    while queue:
-        current = queue.popleft() # Get the next position to explore from the queue and deletes it from the queue.
-        if current in coins_set:
-            target = current 
-            break
-        x, y = current # short for: x = current[0], y = current[1]
-        for dx, dy in [(0, -1), (0, 1), (-1, 0), (1, 0)]:
-            neighbor = (x + dx, y + dy) # Calculate the coordinates of the neighboring position
-            if neighbor not in visited and field[neighbor[0]][neighbor[1]] == 0: # Check if the neighbor is walkable and not visited
-                visited.add(neighbor) # add to visited set to avoid revisiting it in the future
-                parent[neighbor] = current # Remember the parent
-                queue.append(neighbor) # Add to queue to explore later
-    if target is None:
-        return 'WAIT'
-    if target == start: # If the agent is already on a coin, just wait
-        return 'WAIT'
-    step = target
-    while parent[step] != start: # Reconstruct the path from the target back to the start
-        step = parent[step]
-    dx, dy = step[0] - start[0], step[1] - start[1] # Calculate the direction by comparing start and step
-    if dx == 1: return 'RIGHT'
-    if dx == -1: return 'LEFT'
-    if dy == 1: return 'DOWN'
-    if dy == -1: return 'UP'
+    Single BFS search that finds BOTH the nearest coin and the nearest
+    free tile adjacent to a crate (i.e. a spot to bomb from).
+    Coins win ties (same distance).
 
-
-def get_bfs_distance(game_state):
-    """
-    Same BFS search as above, but returns the number of steps to the nearest coin.
-    Returns None if there are no coins or none are reachable.
+    :param game_state: A dictionary describing the current game board.
+    :return: A tuple (target_type, direction, distance).
+             target_type is 'COIN', 'CRATE', or None (nothing found).
+             direction is one of ACTIONS (excluding BOMB), or 'WAIT'.
     """
     if game_state is None:
-        return None
+        return None, 'WAIT', None
+
     field = game_state['field']
-    start = game_state['self'][3] # Agent's position
-    coins = game_state['coins']
-    if not coins:
-        return None
-    coins_set = set(coins)
+    start = game_state['self'][3]
+    coins_set = set(game_state['coins'])
+
     if start in coins_set:
-        return 0
+        return 'COIN', 'WAIT', 0
+
     queue = deque([start])
     visited = {start}
-    distance = {start: 0}
+    parent = {}
+    dist = {start: 0}
+
+    nearest_coin = None
+    nearest_coin_dist = None
+    nearest_crate_spot = None
+    nearest_crate_dist = None
+
     while queue:
+        # BFS explores in order of increasing distance, so once we've
+        # found one of each type, nothing further in the queue can beat it
+        if nearest_coin is not None and nearest_crate_spot is not None:
+            break
+
         current = queue.popleft()
+        cur_dist = dist[current]
         x, y = current
+
         for dx, dy in [(0, -1), (0, 1), (-1, 0), (1, 0)]:
             neighbor = (x + dx, y + dy)
-            if neighbor not in visited and field[neighbor[0]][neighbor[1]] == 0:
+            if neighbor in visited:
+                continue
+            nx, ny = neighbor
+
+            if field[nx][ny] == 0:  # free, walkable tile
                 visited.add(neighbor)
-                distance[neighbor] = distance[current] + 1
-                if neighbor in coins_set:
-                    return distance[neighbor]
+                parent[neighbor] = current
+                dist[neighbor] = cur_dist + 1
                 queue.append(neighbor)
-    return None  # No reachable coins found
-    
+
+                if neighbor in coins_set and nearest_coin is None:
+                    nearest_coin = neighbor
+                    nearest_coin_dist = dist[neighbor]
+
+            elif field[nx][ny] == 1:  # crate -- can't walk onto it
+                if nearest_crate_spot is None:
+                    nearest_crate_spot = current  # bomb from HERE
+                    nearest_crate_dist = cur_dist
+                visited.add(neighbor)  # don't re-discover the same crate
+
+    # Decide which target wins: coin wins ties
+    if nearest_coin is not None and (
+        nearest_crate_spot is None or nearest_coin_dist <= nearest_crate_dist
+    ):
+        target, target_type, distance = nearest_coin, 'COIN', nearest_coin_dist
+    elif nearest_crate_spot is not None:
+        target, target_type, distance = nearest_crate_spot, 'CRATE', nearest_crate_dist
+    else:
+        return None, 'WAIT', None
+
+    if target == start:
+        return target_type, 'WAIT', 0
+
+    step = target
+    while parent[step] != start:
+        step = parent[step]
+    dx, dy = step[0] - start[0], step[1] - start[1]
+    if dx == 1: direction = 'RIGHT'
+    elif dx == -1: direction = 'LEFT'
+    elif dy == 1: direction = 'DOWN'
+    elif dy == -1: direction = 'UP'
+
+    return target_type, direction, distance   
 
 
 def state_to_features(game_state: dict) -> np.array:
@@ -171,7 +180,8 @@ def state_to_features(game_state: dict) -> np.array:
     # This is the dict before the game begins and after it ends
     if game_state is None:
         return None
-    return get_bfs_direction(game_state)  # Use BFS to find the direction to the nearest coin
+    target_type, direction, distance = get_bfs_target(game_state)
+    return direction  # Use BFS to find the direction to the nearest coin
 
 
 # OLD CODE FROM SAMPLE AGENT, MAYBE NEEDED AGAIN LATER?
