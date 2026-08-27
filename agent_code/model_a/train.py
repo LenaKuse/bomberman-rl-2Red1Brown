@@ -94,8 +94,8 @@ def game_events_occurred(self, old_game_state: dict, self_action: str, new_game_
 
 # Additional reward for moving closer to or further away from the nearest coin
     if e.COIN_COLLECTED not in events: # only valid if no coin was collected in this step, to avoid wrong punishment after collecting a coin 
-        _, _, old_distance = get_bfs_target(old_game_state)
-        _, _, new_distance = get_bfs_target(new_game_state)
+        old_target_type, _, old_distance = get_bfs_target(old_game_state)
+        new_target_type, _, new_distance = get_bfs_target(new_game_state)
         if old_distance is not None and new_distance is not None:
             if new_distance < old_distance:
                 events.append(MOVED_CLOSER_TO_COIN)
