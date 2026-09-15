@@ -40,6 +40,9 @@ def update_q_values(self, old_state, action, reward, new_state):
 MOVED_CLOSER_TO_COIN = "MOVED_CLOSER_TO_COIN"
 MOVED_FURTHER_FROM_COIN = "MOVED_FURTHER_FROM_COIN"
 NO_PROGRESS_TOWARD_COIN = "NO_PROGRESS_TOWARD_COIN"
+MOVED_CLOSER_TO_CRATE = "MOVED_CLOSER_TO_CRATE"
+MOVED_FURTHER_FROM_CRATE = "MOVED_FURTHER_FROM_CRATE"
+NO_PROGRESS_TOWARD_CRATE = "NO_PROGRESS_TOWARD_CRATE"
 
 def setup_training(self):
     """
@@ -97,13 +100,21 @@ def game_events_occurred(self, old_game_state: dict, self_action: str, new_game_
         old_target_type, _, old_distance = get_bfs_target(old_game_state)
         new_target_type, _, new_distance = get_bfs_target(new_game_state)
         if old_distance is not None and new_distance is not None:
-            if new_distance < old_distance:
-                events.append(MOVED_CLOSER_TO_COIN)
-            elif new_distance > old_distance:
-                events.append(MOVED_FURTHER_FROM_COIN)
-            else:
-                events.append(NO_PROGRESS_TOWARD_COIN)
-
+            if old_target_type == 'COIN':
+                if new_distance < old_distance:
+                    events.append(MOVED_CLOSER_TO_COIN)
+                elif new_distance > old_distance:
+                    events.append(MOVED_FURTHER_FROM_COIN)
+                else:
+                    events.append(NO_PROGRESS_TOWARD_COIN)
+            elif old_target_type == 'CRATE':
+                if new_distance < old_distance:
+                    events.append(MOVED_CLOSER_TO_CRATE)
+                elif new_distance > old_distance:
+                    events.append(MOVED_FURTHER_FROM_CRATE)
+                else:
+                    events.append(NO_PROGRESS_TOWARD_CRATE)
+            
     # state_to_features is defined in callbacks.py
     #self.transitions.append(Transition(state_to_features(old_game_state), self_action, state_to_features(new_game_state), reward_from_events(self, events)))
     old_state = state_to_features(old_game_state)
@@ -179,12 +190,21 @@ def reward_from_events(self, events: List[str]) -> int:
     certain behavior.
     """
     game_rewards = {
+        # Coin shaping rewards
         e.COIN_COLLECTED: 1,
-        e.KILLED_OPPONENT: 5,
-        e.INVALID_ACTION: -1, 
         MOVED_CLOSER_TO_COIN: 0.5,
         MOVED_FURTHER_FROM_COIN: -0.5,
         NO_PROGRESS_TOWARD_COIN: -0.2,
+
+        # Crate shaping rewards
+        e.CRATE_DESTROYED: 0.3,
+        MOVED_CLOSER_TO_CRATE: 0.2,
+        MOVED_FURTHER_FROM_CRATE: -0.2,
+        NO_PROGRESS_TOWARD_CRATE: -0.1,
+
+        # Other rewards
+        e.KILLED_OPPONENT: 5,
+        e.INVALID_ACTION: -1, 
     }
     reward_sum = 0
     for event in events:
