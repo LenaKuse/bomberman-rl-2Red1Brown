@@ -6,6 +6,8 @@ import numpy as np
 
 from collections import deque # double-ended queue (faster than list for BFS)
 
+from settings import BOMB_POWER
+
 
 ACTIONS = ['UP', 'RIGHT', 'DOWN', 'LEFT', 'WAIT', 'BOMB']  # These are the only actions our model can take
 
@@ -161,6 +163,77 @@ def get_bfs_target(game_state):
     elif dy == -1: direction = 'UP'
 
     return target_type, direction, distance   
+
+
+def get_danger_zone(game_state):
+    """Tiles that are currently threatened: inside a ticking bomb's blast
+    radius (stopped by walls, same rule as Bomb.get_blast_coords), or
+    already on fire right now."""
+    field = game_state['field']
+    danger = set()
+
+    explosion_map = game_state['explosion_map']
+    for x in range(explosion_map.shape[0]):
+        for y in range(explosion_map.shape[1]):
+            if explosion_map[x][y] > 0:
+                danger.add((x, y)) #Add the tiles where an explosion is happening right now
+
+    for (bx, by), timer in game_state['bombs']:
+        danger.add((bx, by))
+        for dx, dy in [(1, 0), (-1, 0), (0, 1), (0, -1)]:
+            for i in range(1, BOMB_POWER + 1):
+                nx, ny = bx + dx * i, by + dy * i
+                if field[nx][ny] == -1:   # wall stops the blast
+                    break
+                danger.add((nx, ny)) #Add the tiles where an explosion is about to happen soon (walk stopped by walls)
+    return danger
+
+
+def get_escape_direction(game_state):
+    """
+    :return: 'UP'/'RIGHT'/'DOWN'/'LEFT' (step towards safety),
+             'SAFE' if not currently in danger,
+             'WAIT' if trapped (no safe tile reachable) -- refine later
+    """
+    field = game_state['field']
+    start = game_state['self'][3]
+    danger = get_danger_zone(game_state)
+
+    if start not in danger:
+        return 'SAFE'
+
+    queue = deque([start])
+    visited = {start}
+    parent = {}
+    target = None
+
+    while queue:
+        current = queue.popleft()
+        if current not in danger:
+            target = current
+            break
+        x, y = current
+        for dx, dy in [(0, -1), (0, 1), (-1, 0), (1, 0)]:
+            neighbor = (x + dx, y + dy)
+            if neighbor in visited:
+                continue
+            nx, ny = neighbor
+            if field[nx][ny] == 0:
+                visited.add(neighbor)
+                parent[neighbor] = current
+                queue.append(neighbor)
+
+    if target is None:
+        return 'WAIT'
+
+    step = target
+    while parent[step] != start:
+        step = parent[step]
+    dx, dy = step[0] - start[0], step[1] - start[1]
+    if dx == 1: return 'RIGHT'
+    if dx == -1: return 'LEFT'
+    if dy == 1: return 'DOWN'
+    if dy == -1: return 'UP'
 
 
 def state_to_features(game_state: dict) -> np.array:
