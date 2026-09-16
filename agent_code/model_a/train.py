@@ -43,6 +43,7 @@ NO_PROGRESS_TOWARD_COIN = "NO_PROGRESS_TOWARD_COIN"
 MOVED_CLOSER_TO_CRATE = "MOVED_CLOSER_TO_CRATE"
 MOVED_FURTHER_FROM_CRATE = "MOVED_FURTHER_FROM_CRATE"
 NO_PROGRESS_TOWARD_CRATE = "NO_PROGRESS_TOWARD_CRATE"
+WASTED_BOMB = "WASTED_BOMB"
 
 def setup_training(self):
     """
@@ -94,6 +95,10 @@ def game_events_occurred(self, old_game_state: dict, self_action: str, new_game_
     :param events: The events that occurred when going from  `old_game_state` to `new_game_state`
     """
     self.logger.debug(f'Encountered game event(s) {", ".join(map(repr, events))} in step {new_game_state["step"]}')
+
+# Additional punishment for dropping a bomb that doesn't destroy a crate or kill an opponent
+    if e.BOMB_DROPPED in events and e.CRATE_DESTROYED not in events and e.KILLED_OPPONENT not in events:
+        events.append(WASTED_BOMB)
 
 # Additional reward for moving closer to or further away from the nearest coin
     if e.COIN_COLLECTED not in events: # only valid if no coin was collected in this step, to avoid wrong punishment after collecting a coin 
@@ -205,6 +210,7 @@ def reward_from_events(self, events: List[str]) -> int:
         # Other rewards
         e.KILLED_OPPONENT: 5,
         e.KILLED_SELF: -5,
+        WASTED_BOMB: -0.3,  # Penalty for dropping a bomb that doesn't destroy a crate or kill an opponent
         e.INVALID_ACTION: -1, 
     }
     reward_sum = 0
