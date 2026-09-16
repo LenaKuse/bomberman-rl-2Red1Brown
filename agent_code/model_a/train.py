@@ -204,6 +204,7 @@ def reward_from_events(self, events: List[str]) -> int:
 
         # Other rewards
         e.KILLED_OPPONENT: 5,
+        e.KILLED_SELF: -5,
         e.INVALID_ACTION: -1, 
     }
     reward_sum = 0
