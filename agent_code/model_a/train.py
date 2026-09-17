@@ -8,6 +8,8 @@ from typing import List
 import events as e
 from .callbacks import state_to_features, get_q_values, ACTIONS, get_bfs_target
 
+from settings import BOMB_POWER
+
 ALPHA = 0.1 # learning rate: how much we update our Q-values after each step
 GAMMA = 0.9 # discount factor: how much we value future rewards over immediate rewards
 
@@ -43,7 +45,19 @@ NO_PROGRESS_TOWARD_COIN = "NO_PROGRESS_TOWARD_COIN"
 MOVED_CLOSER_TO_CRATE = "MOVED_CLOSER_TO_CRATE"
 MOVED_FURTHER_FROM_CRATE = "MOVED_FURTHER_FROM_CRATE"
 NO_PROGRESS_TOWARD_CRATE = "NO_PROGRESS_TOWARD_CRATE"
-WASTED_BOMB = "WASTED_BOMB"
+
+def count_crates_hit(field, position, bomb_power):
+    x, y = position
+    count = 0
+    for dx, dy in [(0, -1), (0, 1), (-1, 0), (1, 0)]:
+        for step in range(1, bomb_power + 1):
+            nx, ny = x + dx * step, y + dy * step
+            if field[nx][ny] == -1:  # Wand stoppt die Explosion
+                break
+            if field[nx][ny] == 1:  # Kiste
+                count += 1
+                break
+    return count
 
 def setup_training(self):
     """
@@ -96,11 +110,7 @@ def game_events_occurred(self, old_game_state: dict, self_action: str, new_game_
     """
     self.logger.debug(f'Encountered game event(s) {", ".join(map(repr, events))} in step {new_game_state["step"]}')
 
-# Additional punishment for dropping a bomb that doesn't destroy a crate or kill an opponent
-    if e.BOMB_DROPPED in events and e.CRATE_DESTROYED not in events and e.KILLED_OPPONENT not in events:
-        events.append(WASTED_BOMB)
-
-# Additional reward for moving closer to or further away from the nearest coin
+# Additional reward for moving closer to or further away from the nearest coin or/and crate
     if e.COIN_COLLECTED not in events: # only valid if no coin was collected in this step, to avoid wrong punishment after collecting a coin 
         old_target_type, _, old_distance = get_bfs_target(old_game_state)
         new_target_type, _, new_distance = get_bfs_target(new_game_state)
@@ -119,12 +129,22 @@ def game_events_occurred(self, old_game_state: dict, self_action: str, new_game_
                     events.append(MOVED_FURTHER_FROM_CRATE)
                 else:
                     events.append(NO_PROGRESS_TOWARD_CRATE)
-            
+
+# Additional reward/punishment for dropping a bomb at good or bad positions            
+    bomb_reward = 0
+    if self_action == 'BOMB':
+        bomb_position = old_game_state['self'][3]
+        crates_hit = count_crates_hit(old_game_state['field'], bomb_position, BOMB_POWER)
+        if crates_hit == 0:
+            bomb_reward = -0.3
+        else:
+            bomb_reward = crates_hit * 0.3
+
     # state_to_features is defined in callbacks.py
     #self.transitions.append(Transition(state_to_features(old_game_state), self_action, state_to_features(new_game_state), reward_from_events(self, events)))
     old_state = state_to_features(old_game_state)
     new_state = state_to_features(new_game_state)
-    reward = reward_from_events(self, events)
+    reward = reward_from_events(self, events) + bomb_reward
 
     self.round_reward += reward
     self.round_steps += 1
@@ -202,7 +222,7 @@ def reward_from_events(self, events: List[str]) -> int:
         NO_PROGRESS_TOWARD_COIN: -0.2,
 
         # Crate shaping rewards
-        e.CRATE_DESTROYED: 0.3,
+        # we do not use the event crate destroyed because it fires at the wrong time!
         MOVED_CLOSER_TO_CRATE: 0.2,
         MOVED_FURTHER_FROM_CRATE: -0.2,
         NO_PROGRESS_TOWARD_CRATE: -0.1,
@@ -210,7 +230,6 @@ def reward_from_events(self, events: List[str]) -> int:
         # Other rewards
         e.KILLED_OPPONENT: 5,
         e.KILLED_SELF: -5,
-        WASTED_BOMB: -0.3,  # Penalty for dropping a bomb that doesn't destroy a crate or kill an opponent
         e.INVALID_ACTION: -1, 
     }
     reward_sum = 0
