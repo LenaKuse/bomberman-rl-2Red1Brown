@@ -68,7 +68,7 @@ def act(self, game_state: dict) -> str:
     q_values = get_q_values(self, state) # Get Q-values for the current state
 
     masked_q_values = q_values.copy() # Create a copy of Q-values to mask invalid actions
-    masked_q_values[-1] = -np.inf # Exclude 'BOMB' action for Task 1
+    # masked_q_values[-1] = -np.inf # Exclude 'BOMB' action for Task 1 (UPDATE: NOW INCLUDED BOMB AGAIN)
 
     # Choose the action with the highest Q-value, breaking ties randomly.
     best_value = np.max(masked_q_values)
@@ -254,10 +254,10 @@ def state_to_features(game_state: dict) -> np.array:
     if game_state is None:
         return None
     target_type, direction, distance = get_bfs_target(game_state)
+    bomb_possible = game_state['self'][2]  # Check if the agent can drop a bomb
     escape_direction = get_escape_direction(game_state)
-
-    return target_type, direction, escape_direction  # Use BFS to find the direction to the nearest coin
-                                                #Return also the escape recommendation (as escape_direction)
+    return target_type, direction, bomb_possible, escape_direction  # Use BFS to find the direction to the nearest coin
+                 #Return also the escape recommendation (as escape_direction)
 
 
 # OLD CODE FROM SAMPLE AGENT, MAYBE NEEDED AGAIN LATER?
