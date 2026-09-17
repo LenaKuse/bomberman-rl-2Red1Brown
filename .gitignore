@@ -257,6 +257,7 @@ $RECYCLE.BIN/
 # Analysis
 experiments/
 my-saved-model.pt
+runawaytest/
 
 # Wanna commit something from here?
 # Force staging of a file in the Terminal using:
