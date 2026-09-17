@@ -254,7 +254,10 @@ def state_to_features(game_state: dict) -> np.array:
     if game_state is None:
         return None
     target_type, direction, distance = get_bfs_target(game_state)
-    return target_type, direction  # Use BFS to find the direction to the nearest coin
+    escape_direction = get_escape_direction(game_state)
+
+    return target_type, direction, escape_direction  # Use BFS to find the direction to the nearest coin
+                                                #Return also the escape recommendation (as escape_direction)
 
 
 # OLD CODE FROM SAMPLE AGENT, MAYBE NEEDED AGAIN LATER?
