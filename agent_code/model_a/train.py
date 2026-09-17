@@ -1,22 +1,45 @@
 from collections import namedtuple, deque
 
 import pickle
+import numpy as np
+import os
 from typing import List
 
 import events as e
-from .callbacks import state_to_features
+from .callbacks import state_to_features, get_q_values, ACTIONS, get_bfs_distance
 
-# This is only an example!
-Transition = namedtuple('Transition',
-                        ('state', 'action', 'next_state', 'reward'))
+ALPHA = 0.1 # learning rate: how much we update our Q-values after each step
+GAMMA = 0.9 # discount factor: how much we value future rewards over immediate rewards
 
-# Hyper parameters -- DO modify
-TRANSITION_HISTORY_SIZE = 3  # keep only ... last transitions
-RECORD_ENEMY_TRANSITIONS = 1.0  # record enemy transitions with probability ...
+def update_q_values(self, old_state, action, reward, new_state):
+    """
+    Update the Q-values for the given state-action pair based on the received reward and the new state.
+
+    :param self: This object is passed to all callbacks.
+    :param old_state: The previous state before taking the action.
+    :param action: The action taken in the old state.
+    :param reward: The reward received after taking the action.
+    :param new_state: The new state after taking the action. (Can be None if the game has ended.)
+    """
+    old_q_values = get_q_values(self, old_state)
+    action_index = ACTIONS.index(action)
+
+    # During Game
+    if new_state is not None:
+        future_q = np.max(get_q_values(self, new_state)) # Maximum Q-value of all possible actions in new state
+    else: # End of Game
+        future_q = 0
+
+    td_error = reward + GAMMA * future_q - old_q_values[action_index] # Temporal Difference error
+    old_q_values[action_index] += ALPHA * td_error # Update Q-value for the taken action
+    self.logger.debug(f"Updated Q-value for state {old_state}, action {action}: {old_q_values[action_index]} (TD Error: {td_error})")
+
+    return td_error  # Return the TD error for logging and analysis
 
 # Events
-PLACEHOLDER_EVENT = "PLACEHOLDER"
-
+MOVED_CLOSER_TO_COIN = "MOVED_CLOSER_TO_COIN"
+MOVED_FURTHER_FROM_COIN = "MOVED_FURTHER_FROM_COIN"
+NO_PROGRESS_TOWARD_COIN = "NO_PROGRESS_TOWARD_COIN"
 
 def setup_training(self):
     """
@@ -28,8 +51,27 @@ def setup_training(self):
     """
     # Example: Setup an array that will note transition tuples
     # (s, a, r, s')
-    self.transitions = deque(maxlen=TRANSITION_HISTORY_SIZE)
+    #self.transitions = deque(maxlen=TRANSITION_HISTORY_SIZE) # Called once after setup(). Creates a deque to store amount of entries. At limit: oldest will be deleted, to add new one.
 
+    self.run_name = input("Enter a name for this training run (e.g. 'Lena_A_baseline'): ")
+    self.track_progress = input("Do you want to track progress for a plot? (y/n): ").strip().lower() == "y"
+
+    if self.track_progress:
+        self.eval_interval = int(input("Evaluate every ... training rounds? (e.g. 50): "))
+        self.eval_rounds = int(input("How many rounds per evaluation phase? (e.g. 10): "))
+    else:
+        self.eval_interval = None
+        self.eval_rounds = None
+
+    self.round_reward = 0 # Sum of rewards for the current round
+    self.round_td_error = 0 # Sum of absolute TD errors for the current round
+    self.round_steps = 0 # Number of steps taken in the current round
+    self.train_round_counter = 0 # counts ONLY training rounds, not eval rounds
+    self.eval_mode = self.track_progress # Starts with eval phase to record untrained baseline
+    self.rounds_since_eval = 0 
+    self.eval_counter = 0
+
+    os.makedirs("experiments", exist_ok=True)
 
 def game_events_occurred(self, old_game_state: dict, self_action: str, new_game_state: dict, events: List[str]):
     """
@@ -50,13 +92,30 @@ def game_events_occurred(self, old_game_state: dict, self_action: str, new_game_
     """
     self.logger.debug(f'Encountered game event(s) {", ".join(map(repr, events))} in step {new_game_state["step"]}')
 
-    # Idea: Add your own events to hand out rewards
-    if ...:
-        events.append(PLACEHOLDER_EVENT)
+# Additional reward for moving closer to or further away from the nearest coin
+    if e.COIN_COLLECTED not in events: # only valid if no coin was collected in this step, to avoid wrong punishment after collecting a coin 
+        old_distance = get_bfs_distance(old_game_state)
+        new_distance = get_bfs_distance(new_game_state)
+        if old_distance is not None and new_distance is not None:
+            if new_distance < old_distance:
+                events.append(MOVED_CLOSER_TO_COIN)
+            elif new_distance > old_distance:
+                events.append(MOVED_FURTHER_FROM_COIN)
+            else:
+                events.append(NO_PROGRESS_TOWARD_COIN)
 
     # state_to_features is defined in callbacks.py
-    self.transitions.append(Transition(state_to_features(old_game_state), self_action, state_to_features(new_game_state), reward_from_events(self, events)))
+    #self.transitions.append(Transition(state_to_features(old_game_state), self_action, state_to_features(new_game_state), reward_from_events(self, events)))
+    old_state = state_to_features(old_game_state)
+    new_state = state_to_features(new_game_state)
+    reward = reward_from_events(self, events)
 
+    self.round_reward += reward
+    self.round_steps += 1
+
+    if not self.eval_mode:  # Only update Q-values during training
+        td_error = update_q_values(self, old_state, self_action, reward, new_state) # Update Q-values
+        self.round_td_error += abs(td_error) # Add absolute TD error to the round's total for logging purposes
 
 def end_of_round(self, last_game_state: dict, last_action: str, events: List[str]):
     """
@@ -72,7 +131,40 @@ def end_of_round(self, last_game_state: dict, last_action: str, events: List[str
     :param self: The same object that is passed to all of your callbacks.
     """
     self.logger.debug(f'Encountered event(s) {", ".join(map(repr, events))} in final step')
-    self.transitions.append(Transition(state_to_features(last_game_state), last_action, None, reward_from_events(self, events)))
+    #self.transitions.append(Transition(state_to_features(last_game_state), last_action, None, reward_from_events(self, events)))
+    last_state = state_to_features(last_game_state)
+    reward = reward_from_events(self, events)
+    self.round_reward += reward # For logging purposes
+    self.round_steps += 1 # For logging purposes
+
+    if not self.eval_mode:  # Never during evaluation phase, only during training
+        td_error = update_q_values(self, last_state, last_action, reward, None) # Update Q-values
+        self.round_td_error += abs(td_error) # Add absolute TD error to the round's total for logging purposes
+        avg_td_error = self.round_td_error / self.round_steps if self.round_steps > 0 else 0 # Average TD error for the round, so rounds with different lengths can be compared
+
+        self.train_round_counter += 1 
+
+        if self.track_progress:
+            with open(f"experiments/{self.run_name}_training_progress.csv", "a") as f:
+                f.write(f"{self.train_round_counter},{self.round_reward},{avg_td_error}\n")
+
+            self.rounds_since_eval += 1
+            if self.rounds_since_eval >= self.eval_interval:
+                self.eval_mode = True
+                self.rounds_since_eval = 0
+    else: # During evaluation phase, we don't update Q-values, but we log the evaluation rewards
+        if self.track_progress:
+            with open(f"experiments/{self.run_name}_eval_progress.csv", "a") as f:
+                f.write(f"{self.train_round_counter},{self.round_reward}\n")
+
+        self.eval_counter += 1
+        if self.eval_counter >= self.eval_rounds:
+            self.eval_mode = False
+            self.eval_counter = 0
+
+    self.round_reward = 0 # Reset round reward for the next round
+    self.round_td_error = 0 # Reset round TD error for the next round
+    self.round_steps = 0 # Reset round steps for the next round
 
     # Store the model
     with open("my-saved-model.pt", "wb") as file:
@@ -89,7 +181,10 @@ def reward_from_events(self, events: List[str]) -> int:
     game_rewards = {
         e.COIN_COLLECTED: 1,
         e.KILLED_OPPONENT: 5,
-        PLACEHOLDER_EVENT: -.1  # idea: the custom event is bad
+        e.INVALID_ACTION: -1, 
+        MOVED_CLOSER_TO_COIN: 0.5,
+        MOVED_FURTHER_FROM_COIN: -0.5,
+        NO_PROGRESS_TOWARD_COIN: -0.2,
     }
     reward_sum = 0
     for event in events:

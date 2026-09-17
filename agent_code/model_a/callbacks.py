@@ -4,10 +4,23 @@ import random
 
 import numpy as np
 
+from collections import deque # double-ended queue (faster than list for BFS)
 
-ACTIONS = ['UP', 'RIGHT', 'DOWN', 'LEFT', 'WAIT', 'BOMB']
 
+ACTIONS = ['UP', 'RIGHT', 'DOWN', 'LEFT', 'WAIT', 'BOMB']  # These are the only actions our model can take
 
+def get_q_values(self, state):
+    """
+    Get the Q-values for a given state from the model.
+
+    :param self: This agent's persistent object. 
+    :param state: The current state of the game.
+    :return: A numpy array of Q-values for each action.
+    """
+    if state not in self.model:
+        self.model[state] = np.zeros(len(ACTIONS)) # Initialize Q-values for yet unseen states
+    return self.model[state]
+    
 def setup(self):
     """
     Setup your code. This is called once when loading each agent.
@@ -22,11 +35,10 @@ def setup(self):
 
     :param self: This object is passed to all callbacks and you can set arbitrary values.
     """
-    if self.train or not os.path.isfile("my-saved-model.pt"):
+    if self.train or not os.path.isfile("my-saved-model.pt"): # If training or no model exists yet
         self.logger.info("Setting up model from scratch.")
-        weights = np.random.rand(len(ACTIONS))
-        self.model = weights / weights.sum()
-    else:
+        self.model = {} # Initialize an empty dictionary to store Q-values for each state
+    else: # If testing and model exists
         self.logger.info("Loading model from saved state.")
         with open("my-saved-model.pt", "rb") as file:
             self.model = pickle.load(file)
@@ -41,15 +53,105 @@ def act(self, game_state: dict) -> str:
     :param game_state: The dictionary that describes everything on the board.
     :return: The action to take as a string.
     """
-    # todo Exploration vs exploitation
+    # If Training and no evaluation phase: Exploration vs exploitation
     random_prob = .1
-    if self.train and random.random() < random_prob:
+    if self.train and not getattr(self, 'eval_mode', False) and random.random() < random_prob: 
         self.logger.debug("Choosing action purely at random.")
-        # 80%: walk in any direction. 10% wait. 10% bomb.
-        return np.random.choice(ACTIONS, p=[.2, .2, .2, .2, .1, .1])
+        # 80%: walk in any direction. 10% wait. 10% bomb. (NOT for Task 1)
+        # return np.random.choice(ACTIONS, p=[.2, .2, .2, .2, .1, .1]) # use this after Task 1 is done and bomb is added
+        return np.random.choice(ACTIONS, p=[.2, .2, .2, .2, .2, .0]) # changed coz bomb is missing for task 1
 
-    self.logger.debug("Querying model for action.")
-    return np.random.choice(ACTIONS, p=self.model)
+    # If Testing or Exploitation: Use model to predict action based on game state
+    state = state_to_features(game_state) 
+    q_values = get_q_values(self, state) # Get Q-values for the current state
+
+    masked_q_values = q_values.copy() # Create a copy of Q-values to mask invalid actions
+    masked_q_values[-1] = -np.inf # Exclude 'BOMB' action for Task 1
+
+    # Choose the action with the highest Q-value, breaking ties randomly.
+    best_value = np.max(masked_q_values)
+    best_indices = np.flatnonzero(masked_q_values == best_value)
+    action = ACTIONS[np.random.choice(best_indices)]
+    self.logger.debug(f"State: {state} (Q-values: {q_values}) -> Chosen action: {action}")
+    return action
+
+def get_bfs_direction(game_state): 
+    """
+    Function to solve Task 1. 
+    Collect all coins as quickly as possible in the field and 
+    navigate efficiently to the nearest coin using BFS.
+    Finds the shortest walkable path to the nearest coin using
+    breadth-first search (BFS) and returns the direction of the
+    very first step of that path. Walls and crates are treated as
+    non-walkable, so the search automatically routes around them.
+                      """         
+    field = game_state['field']
+    start = game_state['self'][3] # Agent's position
+    coins = game_state['coins']
+    if not coins: # No coins left to collect
+        return 'WAIT'
+    coins_set = set(coins) # Convert list of coins to a set, coz faster.
+    queue = deque([start]) # BFS queue starts with agent's position
+    visited = {start} # To keep track of visited positions and to avoid infinite loops.
+    parent = {} # Remembers the parent of each position to reconstruct the path later.
+    target = None 
+    while queue:
+        current = queue.popleft() # Get the next position to explore from the queue and deletes it from the queue.
+        if current in coins_set:
+            target = current 
+            break
+        x, y = current # short for: x = current[0], y = current[1]
+        for dx, dy in [(0, -1), (0, 1), (-1, 0), (1, 0)]:
+            neighbor = (x + dx, y + dy) # Calculate the coordinates of the neighboring position
+            if neighbor not in visited and field[neighbor[0]][neighbor[1]] == 0: # Check if the neighbor is walkable and not visited
+                visited.add(neighbor) # add to visited set to avoid revisiting it in the future
+                parent[neighbor] = current # Remember the parent
+                queue.append(neighbor) # Add to queue to explore later
+    if target is None:
+        return 'WAIT'
+    if target == start: # If the agent is already on a coin, just wait
+        return 'WAIT'
+    step = target
+    while parent[step] != start: # Reconstruct the path from the target back to the start
+        step = parent[step]
+    dx, dy = step[0] - start[0], step[1] - start[1] # Calculate the direction by comparing start and step
+    if dx == 1: return 'RIGHT'
+    if dx == -1: return 'LEFT'
+    if dy == 1: return 'DOWN'
+    if dy == -1: return 'UP'
+
+
+def get_bfs_distance(game_state):
+    """
+    Same BFS search as above, but returns the number of steps to the nearest coin.
+    Returns None if there are no coins or none are reachable.
+    """
+    if game_state is None:
+        return None
+    field = game_state['field']
+    start = game_state['self'][3] # Agent's position
+    coins = game_state['coins']
+    if not coins:
+        return None
+    coins_set = set(coins)
+    if start in coins_set:
+        return 0
+    queue = deque([start])
+    visited = {start}
+    distance = {start: 0}
+    while queue:
+        current = queue.popleft()
+        x, y = current
+        for dx, dy in [(0, -1), (0, 1), (-1, 0), (1, 0)]:
+            neighbor = (x + dx, y + dy)
+            if neighbor not in visited and field[neighbor[0]][neighbor[1]] == 0:
+                visited.add(neighbor)
+                distance[neighbor] = distance[current] + 1
+                if neighbor in coins_set:
+                    return distance[neighbor]
+                queue.append(neighbor)
+    return None  # No reachable coins found
+    
 
 
 def state_to_features(game_state: dict) -> np.array:
@@ -69,11 +171,14 @@ def state_to_features(game_state: dict) -> np.array:
     # This is the dict before the game begins and after it ends
     if game_state is None:
         return None
+    return get_bfs_direction(game_state)  # Use BFS to find the direction to the nearest coin
 
+
+# OLD CODE FROM SAMPLE AGENT, MAYBE NEEDED AGAIN LATER?
     # For example, you could construct several channels of equal shape, ...
-    channels = []
-    channels.append(...)
+    #channels = []
+    #channels.append(...)
     # concatenate them as a feature tensor (they must have the same shape), ...
-    stacked_channels = np.stack(channels)
+    #stacked_channels = np.stack(channels)
     # and return them as a vector
-    return stacked_channels.reshape(-1)
+    #return stacked_channels.reshape(-1)

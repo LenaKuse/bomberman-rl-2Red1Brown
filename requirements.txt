@@ -1,1 +1,3 @@
 # Specify all additional libraries needed here.
+pandas # only needed for plot_progress.py (analysis, not required for agent itself)
+matplotlib # only needed for plot_progress.py (analysis, not required for agent itself)

@@ -7,9 +7,9 @@ Team: *Sunna Gottschewski*, *Mohamed Attia*, *Lena Kuse*
 
 We train reinforcement learning agents to play Bomberman. Our repository contains two agent implementations (at least one of the models focuses on techniques from the lecture):
 
-- `agent_code/model_a/` — *!-- TODO: describe model A here once decided -->one-line description, e.g. "tabular Q-learning
+- `agent_code/model_a/` — <!-- TODO: describe model A here once decided -->one-line description, e.g. "tabular Q-learning
   with hand-crafted features"*
-- `agent_code/model_b/` — *!-- TODO: describe model B here once decided -->one-line description, e.g. "CNN-based DQN"*
+- `agent_code/model_b/` — <!-- TODO: describe model B here once decided -->one-line description, e.g. "CNN-based DQN"*
 
 ## Setup
 We use the conda environment ml_homework from the lecture.  
@@ -37,9 +37,65 @@ python main.py play --agents model_a random_agent rule_based_agent peaceful_agen
 
 ## Training an agent
 
+### Training Progress Tracking & Plots
+
+When starting training (`--train 1`), you'll be asked four questions:
+
+| Question | What it means |
+|---|---|
+| Run name | Used in output filenames, so different runs don't overwrite each other (e.g. `Lena_A_baseline`) |
+| Track progress? (y/n) | If `n`, training runs normally with no extra logging or evaluation phases |
+| Evaluate every ... training rounds? | How many *training* rounds happen between evaluation phases (e.g. `50`) |
+| Rounds per evaluation phase? | How many rounds each evaluation phase lasts (e.g. `10`) |
+
+If you say `y`, an **evaluation phase runs first, before any training** — this records the
+untrained baseline. After that, training and evaluation alternate based on the two numbers above.
+During evaluation, the agent acts greedily (no exploration) and the Q-table is **not** updated.
+
+#### How many total rounds to pass to `--n-rounds`
+
+`--n-rounds` sets the *total* number of rounds (training + evaluation combined) — it does **not**
+equal the number of training rounds you'll actually get. Use this formula to compute it:
+
+
+>n_rounds = eval_rounds + k*(eval_interval + eval_rounds)
+
+where `k` = how many full training/eval cycles you want. Choosing `n_rounds` this way makes the
+run end right after a completed evaluation phase (so you get a clean final data point).
+
+**Example:** `eval_interval=50`, `eval_rounds=10`, want `k=10` cycles (~500 training rounds)
+→ `n_rounds = 10 + 10 × 60 = 610`
+
+#### Generating the plot
+
 ```bash
-python main.py play --my-agent model_a --train 1 --no-gui
+python agent_code/model_a/plot_progress.py <run_name>
 ```
+
+Creates `agent_code/model_a/experiments/<run_name>_progress.png`. Requires at least
+`MIN_ROUNDS_FOR_PLOT` (currently 20) completed training rounds — shorter runs are skipped
+with a message instead of producing a misleading plot.
+
+#### What the plots show
+
+- **Training reward** (top, blue): reward per training round. Faint = raw values, thick = smoothed
+  trend (centered rolling average — averages nearby rounds on *both* sides, not just before).
+- **Eval reward** (top, red): mean ± standard deviation of reward across each evaluation phase,
+  plotted at the number of training rounds completed *so far*. The x=0 point is the untrained
+  baseline. This is the key curve for checking generalization — if training reward rises but eval
+  reward doesn't, that's a sign of overfitting to specific training rounds.
+- **Avg. TD-error** (bottom): how much the Q-values are still changing per update. Trending toward
+  0 suggests the Q-table is stabilizing (though with our small state space it likely won't reach
+  exactly 0 — see report discussion on state aliasing).
+
+#### Changing the smoothing window
+
+The window size is set directly in `plot_progress.py`:
+```python
+window = 11
+```
+This averages 5 rounds before and 5 after each point. Increase it for a smoother (but more
+delayed/blurred) trend line, decrease it to see more short-term detail.
 
 ## Repository structure
 

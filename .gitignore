@@ -252,3 +252,13 @@ $RECYCLE.BIN/
 *.lnk
 
 # End of https://www.toptal.com/developers/gitignore/api/macos,windows,visualstudiocode,python
+
+
+# Analysis
+experiments/
+my-saved-model.pt
+
+# Wanna commit something from here?
+# Force staging of a file in the Terminal using:
+# git add -f path/to/file
+# After that commit in VS Studio Code as usual.
