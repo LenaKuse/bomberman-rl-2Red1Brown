@@ -193,7 +193,7 @@ def get_escape_direction(game_state):
     """
     :return: 'UP'/'RIGHT'/'DOWN'/'LEFT' (step towards safety),
              'SAFE' if not currently in danger,
-             'WAIT' if trapped (no safe tile reachable) -- refine later
+             'TRAPPED' if trapped (no safe tile reachable) -- refine later
     """
     field = game_state['field']
     start = game_state['self'][3]
@@ -224,7 +224,7 @@ def get_escape_direction(game_state):
                 queue.append(neighbor)
 
     if target is None:
-        return 'WAIT'
+        return 'TRAPPED'
 
     step = target
     while parent[step] != start:
