@@ -140,6 +140,9 @@ def game_events_occurred(self, old_game_state: dict, self_action: str, new_game_
         else:
             bomb_reward = crates_hit * 0.3
 
+    if self_action == 'BOMB':
+        self.logger.debug(f"BOMB placed at {bomb_position}, crates_hit={crates_hit}, bomb_reward={bomb_reward}")
+
     # state_to_features is defined in callbacks.py
     #self.transitions.append(Transition(state_to_features(old_game_state), self_action, state_to_features(new_game_state), reward_from_events(self, events)))
     old_state = state_to_features(old_game_state)

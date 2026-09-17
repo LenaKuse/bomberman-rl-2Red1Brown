@@ -181,7 +181,8 @@ def state_to_features(game_state: dict) -> np.array:
     if game_state is None:
         return None
     target_type, direction, distance = get_bfs_target(game_state)
-    return target_type, direction  # Use BFS to find the direction to the nearest coin
+    bomb_possible = game_state['self'][2]  # Check if the agent can drop a bomb
+    return target_type, direction, bomb_possible  # Use BFS to find the direction to the nearest coin
 
 
 # OLD CODE FROM SAMPLE AGENT, MAYBE NEEDED AGAIN LATER?
