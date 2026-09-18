@@ -138,7 +138,13 @@ def game_events_occurred(self, old_game_state: dict, self_action: str, new_game_
 
     if old_escape_signal != 'SAFE':
         if new_escape_signal == 'SAFE':
-            events.append(MOVED_CLOSER_TO_SAFETY)          # escaped entirely
+            events.append(MOVED_CLOSER_TO_SAFETY)              # escaped entirely
+        elif old_escape_signal == 'TRAPPED' and new_escape_signal == 'TRAPPED':
+            events.append(NO_PROGRESS_TOWARD_SAFETY)            # trapped before, trapped still
+        elif old_escape_signal == 'TRAPPED':
+            events.append(MOVED_CLOSER_TO_SAFETY)               # was trapped, now has an escape route
+        elif new_escape_signal == 'TRAPPED':
+            events.append(MOVED_FURTHER_FROM_SAFETY)            # had a route, now boxed in
         elif new_dist_to_safety < old_dist_to_safety:
             events.append(MOVED_CLOSER_TO_SAFETY)
         elif new_dist_to_safety > old_dist_to_safety:
@@ -146,19 +152,16 @@ def game_events_occurred(self, old_game_state: dict, self_action: str, new_game_
         else:
             events.append(NO_PROGRESS_TOWARD_SAFETY)
 
-
 # Additional reward/punishment for dropping a bomb at good or bad positions            
     bomb_reward = 0
     if self_action == 'BOMB':
-        bomb_position = old_game_state['self'][3]
-        crates_hit = count_crates_hit(old_game_state['field'], bomb_position, BOMB_POWER)
-        if crates_hit == 0:
-            bomb_reward = -0.3
+        if old_game_state['self'][2]:  # bomb was actually available -> really got placed
+            bomb_position = old_game_state['self'][3]
+            crates_hit = count_crates_hit(old_game_state['field'], bomb_position, BOMB_POWER)
+            bomb_reward = -0.3 if crates_hit == 0 else crates_hit * 0.3
+            self.logger.debug(f"BOMB placed at {bomb_position}, crates_hit={crates_hit}, bomb_reward={bomb_reward}")
         else:
-            bomb_reward = crates_hit * 0.3
-
-    if self_action == 'BOMB':
-        self.logger.debug(f"BOMB placed at {bomb_position}, crates_hit={crates_hit}, bomb_reward={bomb_reward}")
+            self.logger.debug("BOMB chosen but no bomb available (invalid action)")
 
     # state_to_features is defined in callbacks.py
     #self.transitions.append(Transition(state_to_features(old_game_state), self_action, state_to_features(new_game_state), reward_from_events(self, events)))
