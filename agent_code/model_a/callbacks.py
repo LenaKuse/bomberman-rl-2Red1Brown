@@ -68,7 +68,7 @@ def act(self, game_state: dict) -> str:
     q_values = get_q_values(self, state) # Get Q-values for the current state
 
     masked_q_values = q_values.copy() # Create a copy of Q-values to mask invalid actions
-    masked_q_values[-1] = -np.inf # Exclude 'BOMB' action for Task 1
+    # masked_q_values[-1] = -np.inf # Exclude 'BOMB' action for Task 1 (UPDATE: NOW INCLUDED BOMB AGAIN)
 
     # Choose the action with the highest Q-value, breaking ties randomly.
     best_value = np.max(masked_q_values)
