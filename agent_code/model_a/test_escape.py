@@ -25,7 +25,7 @@ def make_field(size=17):
     return field
 
 
-def visualize_scenario(game_state, escape_dir, title="Escape scenario", save_path=None):
+def visualize_scenario(game_state, escape_dir, distance_to_safety, title="Escape scenario", save_path=None):
     """
     Draws the field (walls/crates/free tiles), the current danger zone
     (red overlay), the bombs (black circles with their timer), the agent
@@ -72,7 +72,7 @@ def visualize_scenario(game_state, escape_dir, title="Escape scenario", save_pat
     ax.set_aspect("equal")
     ax.set_xticks(range(width + 1))
     ax.set_yticks(range(height + 1))
-    ax.set_title(f"{title}\nget_escape_direction() -> '{escape_dir}'")
+    ax.set_title(f"{title}\nget_escape_direction() -> '{escape_dir}' \ndistance to safety: {distance_to_safety}")
 
     if save_path:
         plt.savefig(save_path, dpi=150, bbox_inches="tight")
@@ -94,9 +94,9 @@ def run_scenario(name, field, bombs, self_pos, explosion_map=None):
         'self': ('test', 0, True, self_pos),
         'others': [],
     }
-    direction = get_escape_direction(game_state)
+    direction, distance_to_safety = get_escape_direction(game_state)
     print(f"[{name}] agent at {self_pos}, bombs={bombs} -> '{direction}'")
-    visualize_scenario(game_state, direction, title=name, save_path=f"runawaytest/{name}.png")
+    visualize_scenario(game_state, direction, distance_to_safety, title=name, save_path=f"runawaytest/{name}.png")
     return direction
 
 

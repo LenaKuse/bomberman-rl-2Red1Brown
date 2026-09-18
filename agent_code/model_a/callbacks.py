@@ -200,11 +200,12 @@ def get_escape_direction(game_state):
     danger = get_danger_zone(game_state)
 
     if start not in danger:
-        return 'SAFE'
+        return 'SAFE', 0
 
     queue = deque([start])
     visited = {start}
     parent = {}
+    dist = {start: 0}
     target = None
 
     while queue:
@@ -221,19 +222,22 @@ def get_escape_direction(game_state):
             if field[nx][ny] == 0:
                 visited.add(neighbor)
                 parent[neighbor] = current
+                dist[neighbor] = dist[current] + 1
                 queue.append(neighbor)
 
     if target is None:
-        return 'TRAPPED'
+        return 'TRAPPED', None
+
+    distance = dist[target]
 
     step = target
     while parent[step] != start:
         step = parent[step]
     dx, dy = step[0] - start[0], step[1] - start[1]
-    if dx == 1: return 'RIGHT'
-    if dx == -1: return 'LEFT'
-    if dy == 1: return 'DOWN'
-    if dy == -1: return 'UP'
+    if dx == 1: return 'RIGHT', distance
+    if dx == -1: return 'LEFT', distance
+    if dy == 1: return 'DOWN', distance
+    if dy == -1: return 'UP', distance
 
 
 def state_to_features(game_state: dict) -> np.array:
@@ -254,10 +258,10 @@ def state_to_features(game_state: dict) -> np.array:
     if game_state is None:
         return None
     target_type, direction, distance = get_bfs_target(game_state)
-    escape_direction = get_escape_direction(game_state)
-
-    return target_type, direction, escape_direction  # Use BFS to find the direction to the nearest coin
-                                                #Return also the escape recommendation (as escape_direction)
+    bomb_possible = game_state['self'][2]  # Check if the agent can drop a bomb
+    escape_direction, distance_to_safety = get_escape_direction(game_state)
+    return target_type, direction, bomb_possible, escape_direction  # Use BFS to find the direction to the nearest coin
+                 #Return also the escape recommendation (as escape_direction)
 
 
 # OLD CODE FROM SAMPLE AGENT, MAYBE NEEDED AGAIN LATER?
