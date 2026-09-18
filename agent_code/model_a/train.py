@@ -6,7 +6,7 @@ import os
 from typing import List
 
 import events as e
-from .callbacks import state_to_features, get_q_values, ACTIONS, get_bfs_target
+from .callbacks import state_to_features, get_q_values, ACTIONS, get_bfs_target, get_escape_direction
 
 from settings import BOMB_POWER
 
@@ -45,6 +45,9 @@ NO_PROGRESS_TOWARD_COIN = "NO_PROGRESS_TOWARD_COIN"
 MOVED_CLOSER_TO_CRATE = "MOVED_CLOSER_TO_CRATE"
 MOVED_FURTHER_FROM_CRATE = "MOVED_FURTHER_FROM_CRATE"
 NO_PROGRESS_TOWARD_CRATE = "NO_PROGRESS_TOWARD_CRATE"
+MOVED_CLOSER_TO_SAFETY = "MOVED_CLOSER_TO_SAFETY"
+MOVED_FURTHER_FROM_SAFETY = "MOVED_FURTHER_FROM_SAFETY"
+NO_PROGRESS_TOWARD_SAFETY = "NO_PROGRESS_TOWARD_SAFETY"
 
 def count_crates_hit(field, position, bomb_power):
     x, y = position
@@ -56,7 +59,6 @@ def count_crates_hit(field, position, bomb_power):
                 break
             if field[nx][ny] == 1:  # Kiste
                 count += 1
-                break
     return count
 
 def setup_training(self):
@@ -129,6 +131,21 @@ def game_events_occurred(self, old_game_state: dict, self_action: str, new_game_
                     events.append(MOVED_FURTHER_FROM_CRATE)
                 else:
                     events.append(NO_PROGRESS_TOWARD_CRATE)
+
+#Reward/Punishment for going running towards safety
+    old_escape_signal, old_dist_to_safety = get_escape_direction(old_game_state)
+    new_escape_signal, new_dist_to_safety = get_escape_direction(new_game_state)
+
+    if old_escape_signal != 'SAFE':
+        if new_escape_signal == 'SAFE':
+            events.append(MOVED_CLOSER_TO_SAFETY)          # escaped entirely
+        elif new_dist_to_safety < old_dist_to_safety:
+            events.append(MOVED_CLOSER_TO_SAFETY)
+        elif new_dist_to_safety > old_dist_to_safety:
+            events.append(MOVED_FURTHER_FROM_SAFETY)
+        else:
+            events.append(NO_PROGRESS_TOWARD_SAFETY)
+
 
 # Additional reward/punishment for dropping a bomb at good or bad positions            
     bomb_reward = 0
@@ -229,6 +246,11 @@ def reward_from_events(self, events: List[str]) -> int:
         MOVED_CLOSER_TO_CRATE: 0.2,
         MOVED_FURTHER_FROM_CRATE: -0.2,
         NO_PROGRESS_TOWARD_CRATE: -0.1,
+
+        #Outrun bombs rewards
+        MOVED_CLOSER_TO_SAFETY: 0.3,
+        MOVED_FURTHER_FROM_SAFETY:-0.5,
+        NO_PROGRESS_TOWARD_SAFETY:-0.1,
 
         # Other rewards
         e.KILLED_OPPONENT: 5,
