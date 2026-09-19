@@ -125,10 +125,18 @@ def game_events_occurred(self, old_game_state: dict, self_action: str, new_game_
     :param events: The events that occurred when going from  `old_game_state` to `new_game_state`
     """
     log_round_start_if_new(self, old_game_state['round'])
+
     self.logger.debug(f'Encountered game event(s) {", ".join(map(repr, events))} in step {new_game_state["step"]}')
 
-# Additional reward for moving closer to or further away from the nearest coin or/and crate
-    if e.COIN_COLLECTED not in events: # only valid if no coin was collected in this step, to avoid wrong punishment after collecting a coin 
+    # Compute the escape signal first -- it decides whether coin/crate
+    # progress should even be judged this step.
+    old_escape_signal, old_dist_to_safety = get_escape_direction(old_game_state)
+    new_escape_signal, new_dist_to_safety = get_escape_direction(new_game_state)
+
+    # Additional reward for moving closer to or further away from the nearest coin or/and crate
+    # -- only judged while the agent is safe; while fleeing, coin/crate progress is
+    # irrelevant and must not be rewarded or punished.
+    if old_escape_signal == 'SAFE' and e.COIN_COLLECTED not in events:
         old_target_type, _, old_distance = get_bfs_target(old_game_state)
         new_target_type, _, new_distance = get_bfs_target(new_game_state)
         if old_distance is not None and new_distance is not None:
@@ -147,10 +155,7 @@ def game_events_occurred(self, old_game_state: dict, self_action: str, new_game_
                 else:
                     events.append(NO_PROGRESS_TOWARD_CRATE)
 
-#Reward/Punishment for going running towards safety
-    old_escape_signal, old_dist_to_safety = get_escape_direction(old_game_state)
-    new_escape_signal, new_dist_to_safety = get_escape_direction(new_game_state)
-
+    #Reward/Punishment for running towards safety
     if old_escape_signal != 'SAFE':
         if new_escape_signal == 'SAFE':
             events.append(MOVED_CLOSER_TO_SAFETY)              # escaped entirely
@@ -166,6 +171,7 @@ def game_events_occurred(self, old_game_state: dict, self_action: str, new_game_
             events.append(MOVED_FURTHER_FROM_SAFETY)
         else:
             events.append(NO_PROGRESS_TOWARD_SAFETY)
+
 
 # Additional reward/punishment for dropping a bomb at good or bad positions            
     bomb_reward = 0
@@ -267,9 +273,9 @@ def reward_from_events(self, events: List[str]) -> int:
         NO_PROGRESS_TOWARD_CRATE: -0.1,
 
         #Outrun bombs rewards
-        MOVED_CLOSER_TO_SAFETY: 0.3,
-        MOVED_FURTHER_FROM_SAFETY:-0.5,
-        NO_PROGRESS_TOWARD_SAFETY:-0.1,
+        MOVED_CLOSER_TO_SAFETY: 1.0,
+        MOVED_FURTHER_FROM_SAFETY: -1.5,
+        NO_PROGRESS_TOWARD_SAFETY: -0.3,
 
         # Other rewards
         e.KILLED_OPPONENT: 5,
