@@ -61,6 +61,16 @@ def count_crates_hit(field, position, bomb_power):
                 count += 1
     return count
 
+def log_round_start_if_new(self, current_round):
+    if current_round != self.last_seen_round:
+        self.last_seen_round = current_round
+        if self.eval_mode:
+            self.eval_round_display_counter += 1
+            self.logger.info(f"Start of test round {self.eval_round_display_counter}.")
+        else:
+            self.train_round_display_counter += 1
+            self.logger.info(f"Start of training round {self.train_round_display_counter}.")
+
 def setup_training(self):
     """
     Initialise self for training purpose.
@@ -91,6 +101,10 @@ def setup_training(self):
     self.rounds_since_eval = 0 
     self.eval_counter = 0
 
+    self.last_seen_round = 0
+    self.train_round_display_counter = 0
+    self.eval_round_display_counter = 0
+
     os.makedirs("experiments", exist_ok=True)
 
 def game_events_occurred(self, old_game_state: dict, self_action: str, new_game_state: dict, events: List[str]):
@@ -110,6 +124,7 @@ def game_events_occurred(self, old_game_state: dict, self_action: str, new_game_
     :param new_game_state: The state the agent is in now.
     :param events: The events that occurred when going from  `old_game_state` to `new_game_state`
     """
+    log_round_start_if_new(self, old_game_state['round'])
     self.logger.debug(f'Encountered game event(s) {", ".join(map(repr, events))} in step {new_game_state["step"]}')
 
 # Additional reward for moving closer to or further away from the nearest coin or/and crate
@@ -189,6 +204,7 @@ def end_of_round(self, last_game_state: dict, last_action: str, events: List[str
 
     :param self: The same object that is passed to all of your callbacks.
     """
+    log_round_start_if_new(self, last_game_state['round'])
     self.logger.debug(f'Encountered event(s) {", ".join(map(repr, events))} in final step')
     #self.transitions.append(Transition(state_to_features(last_game_state), last_action, None, reward_from_events(self, events)))
     last_state = state_to_features(last_game_state)
