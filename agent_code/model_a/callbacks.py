@@ -239,30 +239,43 @@ def get_escape_direction(game_state):
     if dy == 1: return 'DOWN', distance
     if dy == -1: return 'UP', distance
 
-
-def state_to_features(game_state: dict) -> np.array:
+def state_to_features(game_state: dict):
     """
-    *This is not a required function, but an idea to structure your code.*
+    Converts the game state into a compact 3-part state key for the Q-table:
+    (target_type, direction, bomb_possible).
 
-    Converts the game state to the input of your model, i.e.
-    a feature vector.
+    Priority order: danger comes first. If the agent is currently threatened,
+    the target is 'SAFETY' and the direction points toward the nearest safe
+    tile. Only if the agent is safe does it fall back to BFS-navigating
+    toward the nearest coin or crate. If nothing can be reached either way
+    (trapped, or no coins/crates left), both fields become 'NONE'.
 
-    You can find out about the state of the game environment via game_state,
-    which is a dictionary. Consult 'get_state_for_agent' in environment.py to see
-    what it contains.
-
-    :param game_state:  A dictionary describing the current game board.
-    :return: np.array
+    :param game_state: A dictionary describing the current game board.
+    :return: (target_type, direction, bomb_possible)
+             target_type in {'COIN', 'CRATE', 'SAFETY', 'NONE'}
+             direction in {'UP', 'RIGHT', 'DOWN', 'LEFT', 'AT_TARGET', 'NONE'}
+             bomb_possible: bool
     """
-    # This is the dict before the game begins and after it ends
     if game_state is None:
         return None
-    target_type, direction, distance = get_bfs_target(game_state)
-    bomb_possible = game_state['self'][2]  # Check if the agent can drop a bomb
-    escape_direction, distance_to_safety = get_escape_direction(game_state)
-    return target_type, direction, bomb_possible, escape_direction  # Use BFS to find the direction to the nearest coin
-                 #Return also the escape recommendation (as escape_direction)
 
+    bomb_possible = game_state['self'][2]
+
+    escape_signal, _ = get_escape_direction(game_state)  # distance not needed in the state key
+
+    if escape_signal != 'SAFE':
+        if escape_signal == 'TRAPPED':
+            target_type, direction = 'NONE', 'NONE'
+        else:
+            target_type, direction = 'SAFETY', escape_signal  # escape_signal is already UP/RIGHT/DOWN/LEFT
+    else:
+        bfs_target_type, bfs_direction, _ = get_bfs_target(game_state)  # distance not needed here either
+        if bfs_target_type is None:
+            target_type, direction = 'NONE', 'NONE'
+        else:
+            target_type, direction = bfs_target_type, bfs_direction
+
+    return target_type, direction, bomb_possible
 
 # OLD CODE FROM SAMPLE AGENT, MAYBE NEEDED AGAIN LATER?
     # For example, you could construct several channels of equal shape, ...
