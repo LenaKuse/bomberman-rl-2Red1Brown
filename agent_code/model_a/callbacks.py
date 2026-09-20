@@ -56,7 +56,10 @@ def act(self, game_state: dict) -> str:
     :return: The action to take as a string.
     """
     # If Training and no evaluation phase: Exploration vs exploitation
-    random_prob = .1
+    #random_prob = .1
+    #New: Introduced epsilon-decay in order to reduce the TD-error on the long run
+    round_num = getattr(self, 'train_round_counter', 0)
+    random_prob = max(0.02, 0.1 * (0.999 ** round_num))   # ~0.1 early, decays toward a floor of 0.02
     if self.train and not getattr(self, 'eval_mode', False) and random.random() < random_prob: 
         self.logger.debug("Choosing action purely at random.")
         # 80%: walk in any direction. 10% wait. 10% bomb. (NOT for Task 1)
