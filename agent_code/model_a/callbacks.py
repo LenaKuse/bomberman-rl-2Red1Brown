@@ -11,6 +11,9 @@ from settings import BOMB_POWER
 
 ACTIONS = ['UP', 'RIGHT', 'DOWN', 'LEFT', 'WAIT', 'BOMB']  # These are the only actions our model can take
 
+OPTIMISTIC_INIT_VALUE = 2
+
+
 def get_q_values(self, state):
     """
     Get the Q-values for a given state from the model.
@@ -20,7 +23,8 @@ def get_q_values(self, state):
     :return: A numpy array of Q-values for each action.
     """
     if state not in self.model:
-        self.model[state] = np.zeros(len(ACTIONS)) # Initialize Q-values for yet unseen states
+        #self.model[state] = np.zeros(len(ACTIONS)) # Initialize Q-values for yet unseen states
+        self.model[state] = np.full(len(ACTIONS), OPTIMISTIC_INIT_VALUE, dtype = float) # Initialize Q-values for yet unseen states
     return self.model[state]
     
 def setup(self):
