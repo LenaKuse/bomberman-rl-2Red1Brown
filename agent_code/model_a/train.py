@@ -6,7 +6,7 @@ import os
 from typing import List
 
 import events as e
-from .callbacks import state_to_features, get_q_values, ACTIONS, get_bfs_target, get_escape_direction
+from .callbacks import state_to_features, get_q_values, ACTIONS, get_bfs_target, get_escape_direction, nearest_opponent_position
 
 from settings import BOMB_POWER
 
@@ -178,6 +178,27 @@ def game_events_occurred(self, old_game_state: dict, self_action: str, new_game_
                 else:
                     events.append(NO_PROGRESS_TOWARD_OPPONENT)
 
+        # Fallback: no opponent is currently BFS-reachable, so use straight-line
+        # distance instead. Lock onto whichever opponent was nearest BEFORE this
+        # step, and keep using THEIR OLD position for both distances -- this
+        # isolates the agent's own movement from the opponent's, and prevents
+        # credit going to a different opponent becoming "nearest" by chance.
+        if old_target_type != 'OPPONENT':
+            target_opponent_pos = nearest_opponent_position(old_game_state)
+            if target_opponent_pos is not None:
+                agent_old_pos = old_game_state['self'][3]
+                agent_new_pos = new_game_state['self'][3]
+                ox, oy = target_opponent_pos
+                old_opp_dist = abs(agent_old_pos[0] - ox) + abs(agent_old_pos[1] - oy)
+                new_opp_dist = abs(agent_new_pos[0] - ox) + abs(agent_new_pos[1] - oy)
+
+                if new_opp_dist < old_opp_dist:
+                    events.append(MOVED_CLOSER_TO_OPPONENT)
+                elif new_opp_dist > old_opp_dist:
+                    events.append(MOVED_FURTHER_FROM_OPPONENT)
+                else:
+                    events.append(NO_PROGRESS_TOWARD_OPPONENT)
+
     #Reward/Punishment for running towards safety
     if old_escape_signal != 'SAFE':
         if new_escape_signal == 'SAFE':
@@ -318,9 +339,9 @@ def reward_from_events(self, events: List[str]) -> int:
         e.INVALID_ACTION: -1, 
 
         # Opponent shaping rewards
-        MOVED_CLOSER_TO_OPPONENT: 0.5,
-        MOVED_FURTHER_FROM_OPPONENT: -0.5,
-        NO_PROGRESS_TOWARD_OPPONENT: -0.2,
+        MOVED_CLOSER_TO_OPPONENT: 0.8, #before 0.5
+        MOVED_FURTHER_FROM_OPPONENT: -1.0, #before -0.5
+        NO_PROGRESS_TOWARD_OPPONENT: -0.4, #before -0.3
         PLACED_BOMB_NEAR_OPPONENT: 1.5,
     }
     reward_sum = 0

@@ -259,6 +259,56 @@ def get_escape_direction(game_state):
     if dy == 1: return 'DOWN', distance
     if dy == -1: return 'UP', distance
 
+def manhattan_direction_to_nearest_opponent(game_state):
+    """
+    Coarse compass bearing (ignoring walls/crates) toward the closest
+    opponent: whichever axis has the larger coordinate gap decides the
+    direction. Used as a state feature so the reward for opponent
+    proximity is something the Q-table can actually condition on.
+
+    :param game_state: A dictionary describing the current game board.
+    :return: 'UP', 'RIGHT', 'DOWN', 'LEFT', or 'NONE' if no opponents remain.
+    """
+    if not game_state['others']:
+        return 'NONE'
+    x, y = game_state['self'][3]
+    ox, oy = min(
+        (o[3] for o in game_state['others']),
+        key=lambda pos: abs(x - pos[0]) + abs(y - pos[1])
+    )
+    dx, dy = ox - x, oy - y
+    if abs(dx) >= abs(dy):
+        return 'RIGHT' if dx > 0 else 'LEFT'
+    else:
+        return 'DOWN' if dy > 0 else 'UP'
+
+def manhattan_distance_to_nearest_opponent(game_state):
+    """
+    Straight-line distance to the closest opponent, ignoring walls and
+    crates entirely. Used to reward getting closer to an opponent even
+    when no walkable BFS path to them exists yet.
+
+    :param game_state: A dictionary describing the current game board.
+    :return: int distance, or None if there are no opponents left.
+    """
+    if not game_state['others']:
+        return None
+    x, y = game_state['self'][3]
+    return min(abs(x - ox) + abs(y - oy) for (_, _, _, (ox, oy)) in game_state['others'])
+
+def nearest_opponent_position(game_state):
+    """
+    Position of whichever opponent is currently closest by Manhattan
+    distance, or None if no opponents remain.
+    """
+    if not game_state['others']:
+        return None
+    x, y = game_state['self'][3]
+    return min(
+        (o[3] for o in game_state['others']),
+        key=lambda pos: abs(x - pos[0]) + abs(y - pos[1])
+    )
+
 def state_to_features(game_state: dict):
     """
     Converts the game state into a compact 3-part state key for the Q-table:
@@ -275,6 +325,7 @@ def state_to_features(game_state: dict):
              target_type in {'COIN', 'CRATE', 'SAFETY', 'NONE', 'OPPONENT'}
              direction in {'UP', 'RIGHT', 'DOWN', 'LEFT', 'AT_TARGET', 'NONE'}
              bomb_possible: bool
+             opponent_direction: {'UP', 'RIGHT', 'DOWN', 'LEFT', 'NONE'}
     """
     if game_state is None:
         return None
@@ -295,7 +346,9 @@ def state_to_features(game_state: dict):
         else:
             target_type, direction = bfs_target_type, bfs_direction
 
-    return target_type, direction, bomb_possible
+    opponent_direction = manhattan_direction_to_nearest_opponent(game_state)
+
+    return target_type, direction, bomb_possible, opponent_direction
 
 # OLD CODE FROM SAMPLE AGENT, MAYBE NEEDED AGAIN LATER?
     # For example, you could construct several channels of equal shape, ...
