@@ -86,13 +86,18 @@ def act(self, game_state: dict) -> str:
 
 def get_bfs_target(game_state):
     """
-    Single BFS search that finds BOTH the nearest coin and the nearest
-    free tile adjacent to a crate (i.e. a spot to bomb from).
-    Coins win ties (same distance).
+    Single BFS search that finds the nearest coin, the nearest free tile
+    adjacent to a crate (a spot to bomb it from), and the nearest free
+    tile adjacent to any opponent (a spot to bomb them from).
+
+    Priority: OPPONENT wins whenever one is reachable at all, regardless
+    of distance to coin/crate. Otherwise whichever of COIN/CRATE is
+    closer wins, with coin winning ties. (SAFETY is handled separately,
+    before this function is even called.)
 
     :param game_state: A dictionary describing the current game board.
     :return: A tuple (target_type, direction, distance).
-             target_type is 'COIN', 'CRATE', or None (nothing found).
+             target_type is 'COIN', 'CRATE', 'OPPONENT', or None (nothing found).
              direction is one of ACTIONS (UP, RIGHT, DOWN, LEFT), 'AT_TARGET' or 'WAIT' (no target found).
     """
     if game_state is None:
@@ -101,9 +106,7 @@ def get_bfs_target(game_state):
     field = game_state['field']
     start = game_state['self'][3]
     coins_set = set(game_state['coins'])
-
-    if start in coins_set:
-        return 'COIN', 'AT_TARGET', 0
+    opponent_positions = set(o[3] for o in game_state['others'])
 
     queue = deque([start])
     visited = {start}
@@ -111,14 +114,18 @@ def get_bfs_target(game_state):
     dist = {start: 0}
     danger = get_danger_zone(game_state)
 
-    nearest_coin = None
-    nearest_coin_dist = None
+    nearest_coin = start if start in coins_set else None
+    nearest_coin_dist = 0 if start in coins_set else None
     nearest_crate_spot = None
     nearest_crate_dist = None
+    nearest_opponent_spot = None
+    nearest_opponent_dist = None
 
     while queue:
-        # BFS explores in order of increasing distance, so once we've
-        # found one of each type, nothing further in the queue can beat it
+        # An opponent target always wins, so stop as soon as one is found.
+        # Otherwise keep going until we've found both a coin and a crate target.
+        if nearest_opponent_spot is not None:
+            break
         if nearest_coin is not None and nearest_crate_spot is not None:
             break
 
@@ -132,7 +139,7 @@ def get_bfs_target(game_state):
                 continue
             nx, ny = neighbor
 
-            if field[nx][ny] == 0:  # free, walkable tile
+            if field[nx][ny] == 0:  # free, walkable tile (opponents stand on free tiles too)
                 visited.add(neighbor)
                 parent[neighbor] = current
                 dist[neighbor] = cur_dist + 1
@@ -142,14 +149,20 @@ def get_bfs_target(game_state):
                     nearest_coin = neighbor
                     nearest_coin_dist = dist[neighbor]
 
+                if neighbor in opponent_positions and nearest_opponent_spot is None:
+                    nearest_opponent_spot = current  # bomb from HERE, adjacent to the opponent
+                    nearest_opponent_dist = cur_dist
+
             elif field[nx][ny] == 1:  # crate -- can't walk onto it
                 if current not in danger and nearest_crate_spot is None:
                     nearest_crate_spot = current  # bomb from HERE
                     nearest_crate_dist = cur_dist
                 visited.add(neighbor)  # don't re-discover the same crate
 
-    # Decide which target wins: coin wins ties
-    if nearest_coin is not None and (
+    # Decide which target wins: OPPONENT always wins if reachable, then coin wins ties over crate
+    if nearest_opponent_spot is not None:
+        target, target_type, distance = nearest_opponent_spot, 'OPPONENT', nearest_opponent_dist
+    elif nearest_coin is not None and (
         nearest_crate_spot is None or nearest_coin_dist <= nearest_crate_dist
     ):
         target, target_type, distance = nearest_coin, 'COIN', nearest_coin_dist
@@ -170,7 +183,7 @@ def get_bfs_target(game_state):
     elif dy == 1: direction = 'DOWN'
     elif dy == -1: direction = 'UP'
 
-    return target_type, direction, distance   
+    return target_type, direction, distance
 
 
 def get_danger_zone(game_state):
@@ -260,7 +273,7 @@ def state_to_features(game_state: dict):
 
     :param game_state: A dictionary describing the current game board.
     :return: (target_type, direction, bomb_possible)
-             target_type in {'COIN', 'CRATE', 'SAFETY', 'NONE'}
+             target_type in {'COIN', 'CRATE', 'SAFETY', 'NONE', 'OPPONENT'}
              direction in {'UP', 'RIGHT', 'DOWN', 'LEFT', 'AT_TARGET', 'NONE'}
              bomb_possible: bool
     """

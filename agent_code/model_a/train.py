@@ -48,6 +48,10 @@ NO_PROGRESS_TOWARD_CRATE = "NO_PROGRESS_TOWARD_CRATE"
 MOVED_CLOSER_TO_SAFETY = "MOVED_CLOSER_TO_SAFETY"
 MOVED_FURTHER_FROM_SAFETY = "MOVED_FURTHER_FROM_SAFETY"
 NO_PROGRESS_TOWARD_SAFETY = "NO_PROGRESS_TOWARD_SAFETY"
+MOVED_CLOSER_TO_OPPONENT = "MOVED_CLOSER_TO_OPPONENT"
+MOVED_FURTHER_FROM_OPPONENT = "MOVED_FURTHER_FROM_OPPONENT"
+NO_PROGRESS_TOWARD_OPPONENT = "NO_PROGRESS_TOWARD_OPPONENT"
+PLACED_BOMB_NEAR_OPPONENT = "PLACED_BOMB_NEAR_OPPONENT"
 
 def count_crates_hit(field, position, bomb_power):
     x, y = position
@@ -58,6 +62,18 @@ def count_crates_hit(field, position, bomb_power):
             if field[nx][ny] == -1:  # Wand stoppt die Explosion
                 break
             if field[nx][ny] == 1:  # Kiste
+                count += 1
+    return count
+
+def opponents_hit_by_bomb(field, position, bomb_power, opponent_positions):
+    x, y = position
+    count = 0
+    for dx, dy in [(0, -1), (0, 1), (-1, 0), (1, 0)]:
+        for step in range(1, bomb_power + 1):
+            nx, ny = x + dx * step, y + dy * step
+            if field[nx][ny] == -1:  # wall stops the blast
+                break
+            if (nx, ny) in opponent_positions:
                 count += 1
     return count
 
@@ -154,6 +170,13 @@ def game_events_occurred(self, old_game_state: dict, self_action: str, new_game_
                     events.append(MOVED_FURTHER_FROM_CRATE)
                 else:
                     events.append(NO_PROGRESS_TOWARD_CRATE)
+            elif old_target_type == 'OPPONENT':
+                if new_distance < old_distance:
+                    events.append(MOVED_CLOSER_TO_OPPONENT)
+                elif new_distance > old_distance:
+                    events.append(MOVED_FURTHER_FROM_OPPONENT)
+                else:
+                    events.append(NO_PROGRESS_TOWARD_OPPONENT)
 
     #Reward/Punishment for running towards safety
     if old_escape_signal != 'SAFE':
@@ -179,8 +202,20 @@ def game_events_occurred(self, old_game_state: dict, self_action: str, new_game_
         if old_game_state['self'][2]:  # bomb was actually available -> really got placed
             bomb_position = old_game_state['self'][3]
             crates_hit = count_crates_hit(old_game_state['field'], bomb_position, BOMB_POWER)
-            bomb_reward = -0.3 if crates_hit == 0 else crates_hit * 0.3
-            self.logger.debug(f"BOMB placed at {bomb_position}, crates_hit={crates_hit}, bomb_reward={bomb_reward}")
+            opponent_positions = set(o[3] for o in old_game_state['others'])
+            opponents_hit = opponents_hit_by_bomb(old_game_state['field'], bomb_position, BOMB_POWER, opponent_positions)
+
+            if opponents_hit > 0:
+                events.append(PLACED_BOMB_NEAR_OPPONENT)
+
+            if crates_hit == 0 and opponents_hit == 0:
+                bomb_reward = -0.3
+            elif crates_hit > 0:
+                bomb_reward = crates_hit * 0.3
+            else:
+                bomb_reward = 0  # hit an opponent but no crates -- not a waste, handled via PLACED_BOMB_NEAR_OPPONENT instead
+
+            self.logger.debug(f"BOMB placed at {bomb_position}, crates_hit={crates_hit}, opponents_hit={opponents_hit}, bomb_reward={bomb_reward}")
         else:
             self.logger.debug("BOMB chosen but no bomb available (invalid action)")
 
@@ -281,6 +316,12 @@ def reward_from_events(self, events: List[str]) -> int:
         e.KILLED_OPPONENT: 5,
         e.KILLED_SELF: -5,
         e.INVALID_ACTION: -1, 
+
+        # Opponent shaping rewards
+        MOVED_CLOSER_TO_OPPONENT: 0.5,
+        MOVED_FURTHER_FROM_OPPONENT: -0.5,
+        NO_PROGRESS_TOWARD_OPPONENT: -0.2,
+        PLACED_BOMB_NEAR_OPPONENT: 1.5,
     }
     reward_sum = 0
     for event in events:
