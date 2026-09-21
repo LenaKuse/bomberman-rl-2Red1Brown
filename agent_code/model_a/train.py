@@ -262,15 +262,15 @@ def reward_from_events(self, events: List[str]) -> int:
     game_rewards = {
         # Coin shaping rewards
         e.COIN_COLLECTED: 1,
-        MOVED_CLOSER_TO_COIN: 0.5,
-        MOVED_FURTHER_FROM_COIN: -0.5,
-        NO_PROGRESS_TOWARD_COIN: -0.2,
+        MOVED_CLOSER_TO_COIN: 1.0,
+        MOVED_FURTHER_FROM_COIN: -1.5,
+        NO_PROGRESS_TOWARD_COIN: -0.3,
 
         # Crate shaping rewards
         # we do not use the event crate destroyed because it fires at the wrong time!
-        MOVED_CLOSER_TO_CRATE: 0.2,
-        MOVED_FURTHER_FROM_CRATE: -0.2,
-        NO_PROGRESS_TOWARD_CRATE: -0.1,
+        MOVED_CLOSER_TO_CRATE: 1.0,
+        MOVED_FURTHER_FROM_CRATE: -1.5,
+        NO_PROGRESS_TOWARD_CRATE: -0.3,
 
         #Outrun bombs rewards
         MOVED_CLOSER_TO_SAFETY: 1.0,

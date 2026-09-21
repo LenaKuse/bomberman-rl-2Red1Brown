@@ -109,6 +109,7 @@ def get_bfs_target(game_state):
     visited = {start}
     parent = {}
     dist = {start: 0}
+    danger = get_danger_zone(game_state)
 
     nearest_coin = None
     nearest_coin_dist = None
@@ -137,12 +138,12 @@ def get_bfs_target(game_state):
                 dist[neighbor] = cur_dist + 1
                 queue.append(neighbor)
 
-                if neighbor in coins_set and nearest_coin is None:
+                if neighbor in coins_set and neighbor not in danger and nearest_coin is None:
                     nearest_coin = neighbor
                     nearest_coin_dist = dist[neighbor]
 
             elif field[nx][ny] == 1:  # crate -- can't walk onto it
-                if nearest_crate_spot is None:
+                if current not in danger and nearest_crate_spot is None:
                     nearest_crate_spot = current  # bomb from HERE
                     nearest_crate_dist = cur_dist
                 visited.add(neighbor)  # don't re-discover the same crate
