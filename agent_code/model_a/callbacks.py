@@ -6,8 +6,13 @@ import numpy as np
 
 from collections import deque # double-ended queue (faster than list for BFS)
 
+from settings import BOMB_POWER
+
 
 ACTIONS = ['UP', 'RIGHT', 'DOWN', 'LEFT', 'WAIT', 'BOMB']  # These are the only actions our model can take
+
+OPTIMISTIC_INIT_VALUE = 2
+
 
 def get_q_values(self, state):
     """
@@ -18,7 +23,8 @@ def get_q_values(self, state):
     :return: A numpy array of Q-values for each action.
     """
     if state not in self.model:
-        self.model[state] = np.zeros(len(ACTIONS)) # Initialize Q-values for yet unseen states
+        #self.model[state] = np.zeros(len(ACTIONS)) # Initialize Q-values for yet unseen states
+        self.model[state] = np.full(len(ACTIONS), OPTIMISTIC_INIT_VALUE, dtype = float) # Initialize Q-values for yet unseen states
     return self.model[state]
     
 def setup(self):
@@ -54,19 +60,22 @@ def act(self, game_state: dict) -> str:
     :return: The action to take as a string.
     """
     # If Training and no evaluation phase: Exploration vs exploitation
-    random_prob = .1
+    #random_prob = .1
+    #New: Introduced epsilon-decay in order to reduce the TD-error on the long run
+    round_num = getattr(self, 'train_round_counter', 0)
+    random_prob = max(0.02, 0.1 * (0.999 ** round_num))   # ~0.1 early, decays toward a floor of 0.02
     if self.train and not getattr(self, 'eval_mode', False) and random.random() < random_prob: 
         self.logger.debug("Choosing action purely at random.")
         # 80%: walk in any direction. 10% wait. 10% bomb. (NOT for Task 1)
-        # return np.random.choice(ACTIONS, p=[.2, .2, .2, .2, .1, .1]) # use this after Task 1 is done and bomb is added
-        return np.random.choice(ACTIONS, p=[.2, .2, .2, .2, .2, .0]) # changed coz bomb is missing for task 1
+        return np.random.choice(ACTIONS, p=[.2, .2, .2, .2, .1, .1]) # use this after Task 1 is done and bomb is added
+        # return np.random.choice(ACTIONS, p=[.2, .2, .2, .2, .2, .0]) # changed coz bomb is missing for task 1
 
     # If Testing or Exploitation: Use model to predict action based on game state
     state = state_to_features(game_state) 
     q_values = get_q_values(self, state) # Get Q-values for the current state
 
     masked_q_values = q_values.copy() # Create a copy of Q-values to mask invalid actions
-    masked_q_values[-1] = -np.inf # Exclude 'BOMB' action for Task 1
+    # masked_q_values[-1] = -np.inf # Exclude 'BOMB' action for Task 1 (UPDATE: NOW INCLUDED BOMB AGAIN)
 
     # Choose the action with the highest Q-value, breaking ties randomly.
     best_value = np.max(masked_q_values)
@@ -75,104 +84,219 @@ def act(self, game_state: dict) -> str:
     self.logger.debug(f"State: {state} (Q-values: {q_values}) -> Chosen action: {action}")
     return action
 
-def get_bfs_direction(game_state): 
+def get_bfs_target(game_state):
     """
-    Function to solve Task 1. 
-    Collect all coins as quickly as possible in the field and 
-    navigate efficiently to the nearest coin using BFS.
-    Finds the shortest walkable path to the nearest coin using
-    breadth-first search (BFS) and returns the direction of the
-    very first step of that path. Walls and crates are treated as
-    non-walkable, so the search automatically routes around them.
-                      """         
-    field = game_state['field']
-    start = game_state['self'][3] # Agent's position
-    coins = game_state['coins']
-    if not coins: # No coins left to collect
-        return 'WAIT'
-    coins_set = set(coins) # Convert list of coins to a set, coz faster.
-    queue = deque([start]) # BFS queue starts with agent's position
-    visited = {start} # To keep track of visited positions and to avoid infinite loops.
-    parent = {} # Remembers the parent of each position to reconstruct the path later.
-    target = None 
-    while queue:
-        current = queue.popleft() # Get the next position to explore from the queue and deletes it from the queue.
-        if current in coins_set:
-            target = current 
-            break
-        x, y = current # short for: x = current[0], y = current[1]
-        for dx, dy in [(0, -1), (0, 1), (-1, 0), (1, 0)]:
-            neighbor = (x + dx, y + dy) # Calculate the coordinates of the neighboring position
-            if neighbor not in visited and field[neighbor[0]][neighbor[1]] == 0: # Check if the neighbor is walkable and not visited
-                visited.add(neighbor) # add to visited set to avoid revisiting it in the future
-                parent[neighbor] = current # Remember the parent
-                queue.append(neighbor) # Add to queue to explore later
-    if target is None:
-        return 'WAIT'
-    if target == start: # If the agent is already on a coin, just wait
-        return 'WAIT'
-    step = target
-    while parent[step] != start: # Reconstruct the path from the target back to the start
-        step = parent[step]
-    dx, dy = step[0] - start[0], step[1] - start[1] # Calculate the direction by comparing start and step
-    if dx == 1: return 'RIGHT'
-    if dx == -1: return 'LEFT'
-    if dy == 1: return 'DOWN'
-    if dy == -1: return 'UP'
+    Single BFS search that finds the nearest coin, the nearest free tile
+    adjacent to a crate (a spot to bomb it from), and the nearest free
+    tile adjacent to any opponent (a spot to bomb them from).
 
+    Priority: OPPONENT wins whenever one is reachable at all, regardless
+    of distance to coin/crate. Otherwise whichever of COIN/CRATE is
+    closer wins, with coin winning ties. (SAFETY is handled separately,
+    before this function is even called.)
 
-def get_bfs_distance(game_state):
-    """
-    Same BFS search as above, but returns the number of steps to the nearest coin.
-    Returns None if there are no coins or none are reachable.
+    :param game_state: A dictionary describing the current game board.
+    :return: A tuple (target_type, direction, distance).
+             target_type is 'COIN', 'CRATE', 'OPPONENT', or None (nothing found).
+             direction is one of ACTIONS (UP, RIGHT, DOWN, LEFT), 'AT_TARGET' or 'WAIT' (no target found).
     """
     if game_state is None:
-        return None
+        return None, 'WAIT', None
+
     field = game_state['field']
-    start = game_state['self'][3] # Agent's position
-    coins = game_state['coins']
-    if not coins:
-        return None
-    coins_set = set(coins)
-    if start in coins_set:
-        return 0
+    start = game_state['self'][3]
+    coins_set = set(game_state['coins'])
+    opponent_positions = set(o[3] for o in game_state['others'])
+
     queue = deque([start])
     visited = {start}
-    distance = {start: 0}
+    parent = {}
+    dist = {start: 0}
+    danger = get_danger_zone(game_state)
+
+    nearest_coin = start if start in coins_set else None
+    nearest_coin_dist = 0 if start in coins_set else None
+    nearest_crate_spot = None
+    nearest_crate_dist = None
+    nearest_opponent_spot = None
+    nearest_opponent_dist = None
+
+    while queue:
+        # An opponent target always wins, so stop as soon as one is found.
+        # Otherwise keep going until we've found both a coin and a crate target.
+        if nearest_opponent_spot is not None:
+            break
+        if nearest_coin is not None and nearest_crate_spot is not None:
+            break
+
+        current = queue.popleft()
+        cur_dist = dist[current]
+        x, y = current
+
+        for dx, dy in [(0, -1), (0, 1), (-1, 0), (1, 0)]:
+            neighbor = (x + dx, y + dy)
+            if neighbor in visited:
+                continue
+            nx, ny = neighbor
+
+            if field[nx][ny] == 0:  # free, walkable tile (opponents stand on free tiles too)
+                visited.add(neighbor)
+                parent[neighbor] = current
+                dist[neighbor] = cur_dist + 1
+                queue.append(neighbor)
+
+                if neighbor in coins_set and neighbor not in danger and nearest_coin is None:
+                    nearest_coin = neighbor
+                    nearest_coin_dist = dist[neighbor]
+
+                if neighbor in opponent_positions and nearest_opponent_spot is None:
+                    nearest_opponent_spot = current  # bomb from HERE, adjacent to the opponent
+                    nearest_opponent_dist = cur_dist
+
+            elif field[nx][ny] == 1:  # crate -- can't walk onto it
+                if current not in danger and nearest_crate_spot is None:
+                    nearest_crate_spot = current  # bomb from HERE
+                    nearest_crate_dist = cur_dist
+                visited.add(neighbor)  # don't re-discover the same crate
+
+    # Decide which target wins: OPPONENT always wins if reachable, then coin wins ties over crate
+    if nearest_opponent_spot is not None:
+        target, target_type, distance = nearest_opponent_spot, 'OPPONENT', nearest_opponent_dist
+    elif nearest_coin is not None and (
+        nearest_crate_spot is None or nearest_coin_dist <= nearest_crate_dist
+    ):
+        target, target_type, distance = nearest_coin, 'COIN', nearest_coin_dist
+    elif nearest_crate_spot is not None:
+        target, target_type, distance = nearest_crate_spot, 'CRATE', nearest_crate_dist
+    else:
+        return None, 'WAIT', None
+
+    if target == start:
+        return target_type, 'AT_TARGET', 0
+
+    step = target
+    while parent[step] != start:
+        step = parent[step]
+    dx, dy = step[0] - start[0], step[1] - start[1]
+    if dx == 1: direction = 'RIGHT'
+    elif dx == -1: direction = 'LEFT'
+    elif dy == 1: direction = 'DOWN'
+    elif dy == -1: direction = 'UP'
+
+    return target_type, direction, distance
+
+
+def get_danger_zone(game_state):
+    """Tiles that are currently threatened: inside a ticking bomb's blast
+    radius (stopped by walls, same rule as Bomb.get_blast_coords), or
+    already on fire right now."""
+    field = game_state['field']
+    danger = set()
+
+    explosion_map = game_state['explosion_map']
+    for x in range(explosion_map.shape[0]):
+        for y in range(explosion_map.shape[1]):
+            if explosion_map[x][y] > 0:
+                danger.add((x, y)) #Add the tiles where an explosion is happening right now
+
+    for (bx, by), timer in game_state['bombs']:
+        danger.add((bx, by))
+        for dx, dy in [(1, 0), (-1, 0), (0, 1), (0, -1)]:
+            for i in range(1, BOMB_POWER + 1):
+                nx, ny = bx + dx * i, by + dy * i
+                if field[nx][ny] == -1:   # wall stops the blast
+                    break
+                danger.add((nx, ny)) #Add the tiles where an explosion is about to happen soon (walk stopped by walls)
+    return danger
+
+
+def get_escape_direction(game_state):
+    """
+    :return: 'UP'/'RIGHT'/'DOWN'/'LEFT' (step towards safety),
+             'SAFE' if not currently in danger,
+             'TRAPPED' if trapped (no safe tile reachable) -- refine later
+    """
+    field = game_state['field']
+    start = game_state['self'][3]
+    danger = get_danger_zone(game_state)
+
+    if start not in danger:
+        return 'SAFE', 0
+
+    queue = deque([start])
+    visited = {start}
+    parent = {}
+    dist = {start: 0}
+    target = None
+
     while queue:
         current = queue.popleft()
+        if current not in danger:
+            target = current
+            break
         x, y = current
         for dx, dy in [(0, -1), (0, 1), (-1, 0), (1, 0)]:
             neighbor = (x + dx, y + dy)
-            if neighbor not in visited and field[neighbor[0]][neighbor[1]] == 0:
+            if neighbor in visited:
+                continue
+            nx, ny = neighbor
+            if field[nx][ny] == 0:
                 visited.add(neighbor)
-                distance[neighbor] = distance[current] + 1
-                if neighbor in coins_set:
-                    return distance[neighbor]
+                parent[neighbor] = current
+                dist[neighbor] = dist[current] + 1
                 queue.append(neighbor)
-    return None  # No reachable coins found
-    
 
+    if target is None:
+        return 'TRAPPED', None
 
-def state_to_features(game_state: dict) -> np.array:
+    distance = dist[target]
+
+    step = target
+    while parent[step] != start:
+        step = parent[step]
+    dx, dy = step[0] - start[0], step[1] - start[1]
+    if dx == 1: return 'RIGHT', distance
+    if dx == -1: return 'LEFT', distance
+    if dy == 1: return 'DOWN', distance
+    if dy == -1: return 'UP', distance
+
+def state_to_features(game_state: dict):
     """
-    *This is not a required function, but an idea to structure your code.*
+    Converts the game state into a compact 3-part state key for the Q-table:
+    (target_type, direction, bomb_possible).
 
-    Converts the game state to the input of your model, i.e.
-    a feature vector.
+    Priority order: danger comes first. If the agent is currently threatened,
+    the target is 'SAFETY' and the direction points toward the nearest safe
+    tile. Only if the agent is safe does it fall back to BFS-navigating
+    toward the nearest coin or crate. If nothing can be reached either way
+    (trapped, or no coins/crates left), both fields become 'NONE'.
 
-    You can find out about the state of the game environment via game_state,
-    which is a dictionary. Consult 'get_state_for_agent' in environment.py to see
-    what it contains.
-
-    :param game_state:  A dictionary describing the current game board.
-    :return: np.array
+    :param game_state: A dictionary describing the current game board.
+    :return: (target_type, direction, bomb_possible)
+             target_type in {'COIN', 'CRATE', 'SAFETY', 'NONE', 'OPPONENT'}
+             direction in {'UP', 'RIGHT', 'DOWN', 'LEFT', 'AT_TARGET', 'NONE'}
+             bomb_possible: bool
     """
-    # This is the dict before the game begins and after it ends
     if game_state is None:
         return None
-    return get_bfs_direction(game_state)  # Use BFS to find the direction to the nearest coin
 
+    bomb_possible = game_state['self'][2]
+
+    escape_signal, _ = get_escape_direction(game_state)  # distance not needed in the state key
+
+    if escape_signal != 'SAFE':
+        if escape_signal == 'TRAPPED':
+            target_type, direction = 'NONE', 'NONE'
+        else:
+            target_type, direction = 'SAFETY', escape_signal  # escape_signal is already UP/RIGHT/DOWN/LEFT
+    else:
+        bfs_target_type, bfs_direction, _ = get_bfs_target(game_state)  # distance not needed here either
+        if bfs_target_type is None:
+            target_type, direction = 'NONE', 'NONE'
+        else:
+            target_type, direction = bfs_target_type, bfs_direction
+
+    return target_type, direction, bomb_possible
 
 # OLD CODE FROM SAMPLE AGENT, MAYBE NEEDED AGAIN LATER?
     # For example, you could construct several channels of equal shape, ...
